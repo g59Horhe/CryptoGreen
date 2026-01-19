@@ -43,7 +43,7 @@ class FeatureExtractor:
         >>> print(f"Entropy: {features['entropy']:.2f}")
     """
     
-    # File type encoding mapping
+    # File type encoding mapping (as specified in paper)
     FILE_TYPE_ENCODING = {
         'txt': 0,
         'jpg': 1,
@@ -51,8 +51,8 @@ class FeatureExtractor:
         'png': 2,
         'mp4': 3,
         'pdf': 4,
-        'zip': 5,
-        'sql': 6,
+        'sql': 5,
+        'zip': 6,
         'unknown': 7,
     }
     
@@ -73,21 +73,20 @@ class FeatureExtractor:
     def extract_features(cls, file_path: Union[str, Path]) -> dict:
         """Extract all features from a file.
         
+        Extracts EXACTLY 7 features as specified in paper:
+        1. file_size_log: log10(file_size_bytes)
+        2. file_type_encoded: txt=0, jpg=1, png=2, mp4=3, pdf=4, sql=5, zip=6
+        3. entropy: Shannon entropy (0-8 bits)
+        4. entropy_quartile_25: 25th percentile of byte values (0-255)
+        5. entropy_quartile_75: 75th percentile of byte values (0-255)
+        6. has_aes_ni: Boolean from /proc/cpuinfo flags
+        7. cpu_cores: Physical cores only (psutil.cpu_count(logical=False))
+        
         Args:
             file_path: Path to the file to analyze.
             
         Returns:
-            Dict containing all extracted features:
-                - file_size_bytes: File size in bytes
-                - file_size_log: log10(file_size)
-                - file_type: File extension (lowercase, no dot)
-                - file_type_encoded: Numeric encoding of file type
-                - entropy: Shannon entropy (0-8)
-                - entropy_quartile_25: 25th percentile of byte distribution
-                - entropy_quartile_75: 75th percentile of byte distribution
-                - has_aes_ni: Whether CPU has AES-NI
-                - has_arm_crypto: Whether CPU has ARM crypto extensions
-                - cpu_cores: Number of CPU cores
+            Dict containing all extracted features.
                 
         Raises:
             FileNotFoundError: If file doesn't exist.
@@ -101,18 +100,18 @@ class FeatureExtractor:
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         
-        # Get file size
+        # 1. File size (log scale)
         file_size = path.stat().st_size
         file_size_log = math.log10(file_size) if file_size > 0 else 0.0
         
-        # Get file type
+        # 2. File type encoding
         file_type = path.suffix.lstrip('.').lower() or 'unknown'
         file_type_encoded = cls.encode_file_type(file_type)
         
-        # Calculate entropy
+        # 3-5. Entropy and quartiles
         entropy, q25, q75 = cls.calculate_entropy(file_path)
         
-        # Get hardware capabilities
+        # 6-7. Hardware capabilities (cached)
         hardware = cls.detect_hardware_capabilities()
         
         features = {
@@ -124,7 +123,6 @@ class FeatureExtractor:
             'entropy_quartile_25': q25,
             'entropy_quartile_75': q75,
             'has_aes_ni': hardware['has_aes_ni'],
-            'has_arm_crypto': hardware['has_arm_crypto'],
             'cpu_cores': hardware['cpu_cores'],
         }
         
@@ -141,15 +139,18 @@ class FeatureExtractor:
         Shannon entropy measures the randomness of data. Higher entropy
         indicates more random/encrypted/compressed data.
         
+        For files >10KB: compute on FIRST 10KB only
+        For files <=10KB: compute on entire file
+        
         Args:
             file_path: Path to file to analyze.
-            sample_size: Maximum bytes to sample (default 10KB).
+            sample_size: Maximum bytes to sample (default 10KB = 10240 bytes).
             
         Returns:
             Tuple of (entropy, quartile_25, quartile_75):
                 - entropy: Shannon entropy in bits (0-8 range)
-                - quartile_25: 25th percentile of byte frequency
-                - quartile_75: 75th percentile of byte frequency
+                - quartile_25: 25th percentile of BYTE VALUES (0-255)
+                - quartile_75: 75th percentile of BYTE VALUES (0-255)
                 
         Notes:
             - Entropy of 0: All bytes are identical
@@ -173,7 +174,7 @@ class FeatureExtractor:
         if file_size == 0:
             return 0.0, 0.0, 0.0
         
-        # Read sample (first N bytes)
+        # Read sample: first 10KB for files >10KB, entire file otherwise
         bytes_to_read = min(sample_size, file_size)
         
         with open(file_path, 'rb') as f:
@@ -188,27 +189,26 @@ class FeatureExtractor:
         
         # Calculate Shannon entropy: H = -Σ p(x) * log2(p(x))
         entropy = 0.0
-        frequencies = []
         
         for count in byte_counts.values():
             probability = count / total_bytes
-            frequencies.append(probability)
             if probability > 0:
                 entropy -= probability * math.log2(probability)
         
-        # Calculate quartiles of frequency distribution
-        # Sort frequencies and find 25th and 75th percentiles
-        frequencies.sort()
+        # Calculate quartiles of BYTE VALUES (0-255), not frequencies
+        # Convert data to sorted list of byte values
+        byte_values = sorted(data)
         
-        if len(frequencies) == 0:
+        if len(byte_values) == 0:
             q25, q75 = 0.0, 0.0
-        elif len(frequencies) == 1:
-            q25 = q75 = frequencies[0]
+        elif len(byte_values) == 1:
+            q25 = q75 = float(byte_values[0])
         else:
-            q25_idx = int(len(frequencies) * 0.25)
-            q75_idx = int(len(frequencies) * 0.75)
-            q25 = frequencies[q25_idx]
-            q75 = frequencies[min(q75_idx, len(frequencies) - 1)]
+            # Calculate 25th and 75th percentile indices
+            q25_idx = int(len(byte_values) * 0.25)
+            q75_idx = int(len(byte_values) * 0.75)
+            q25 = float(byte_values[q25_idx])
+            q75 = float(byte_values[min(q75_idx, len(byte_values) - 1)])
         
         return entropy, q25, q75
     
@@ -218,14 +218,12 @@ class FeatureExtractor:
         
         Detects hardware features relevant to cryptographic performance:
         - AES-NI: Intel AES instructions (also supported by AMD)
-        - ARM Crypto: ARM cryptographic extensions
-        - CPU cores: Number of physical CPU cores
+        - CPU cores: Number of PHYSICAL CPU cores (not threads)
         
         Returns:
             Dict containing:
-                - has_aes_ni: bool - AES-NI support
-                - has_arm_crypto: bool - ARM crypto support
-                - cpu_cores: int - Number of CPU cores
+                - has_aes_ni: bool - AES-NI support from /proc/cpuinfo
+                - cpu_cores: int - Physical cores (psutil.cpu_count(logical=False))
                 - cpu_model: str - CPU model name
                 
         Note:
@@ -240,10 +238,17 @@ class FeatureExtractor:
         if cls._hardware_cache is not None:
             return cls._hardware_cache.copy()
         
+        # Get physical core count using psutil
+        try:
+            import psutil
+            cpu_cores = psutil.cpu_count(logical=False) or 1
+        except ImportError:
+            logger.warning("psutil not available, using os.cpu_count()")
+            cpu_cores = os.cpu_count() or 1
+        
         result = {
             'has_aes_ni': False,
-            'has_arm_crypto': False,
-            'cpu_cores': os.cpu_count() or 1,
+            'cpu_cores': cpu_cores,
             'cpu_model': 'Unknown',
         }
         
@@ -273,7 +278,6 @@ class FeatureExtractor:
         """
         result = {
             'has_aes_ni': False,
-            'has_arm_crypto': False,
             'cpu_model': 'Unknown',
         }
         
@@ -298,13 +302,6 @@ class FeatureExtractor:
                 if 'aes' in flags:
                     result['has_aes_ni'] = True
             
-            # Check for ARM crypto extensions
-            # On ARM, features line looks like: Features : ... aes pmull sha1 sha2 ...
-            features_match = re.search(r'features\s*:\s*(.+)', content)
-            if features_match:
-                features = features_match.group(1).split()
-                if 'aes' in features:
-                    result['has_arm_crypto'] = True
         except Exception as e:
             logger.warning(f"Error reading /proc/cpuinfo: {e}")
         
@@ -323,7 +320,6 @@ class FeatureExtractor:
         """
         result = {
             'has_aes_ni': False,
-            'has_arm_crypto': False,
             'cpu_model': 'Unknown',
         }
         
@@ -380,7 +376,6 @@ class FeatureExtractor:
         """
         result = {
             'has_aes_ni': False,
-            'has_arm_crypto': False,
             'cpu_model': 'Unknown',
         }
         
@@ -408,9 +403,8 @@ class FeatureExtractor:
             
             # Check for ARM crypto (Apple Silicon)
             if platform.machine() == 'arm64':
-                # Apple Silicon has hardware crypto
-                result['has_arm_crypto'] = True
-                result['has_aes_ni'] = True  # Apple Silicon has equivalent performance
+                # Apple Silicon has hardware crypto equivalent to AES-NI
+                result['has_aes_ni'] = True
         except Exception as e:
             logger.warning(f"Error detecting macOS CPU capabilities: {e}")
         
@@ -432,8 +426,8 @@ class FeatureExtractor:
             png -> 2
             mp4 -> 3
             pdf -> 4
-            zip -> 5
-            sql -> 6
+            sql -> 5
+            zip -> 6
             unknown/other -> 7
             
         Example:

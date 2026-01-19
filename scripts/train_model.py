@@ -39,6 +39,10 @@ from typing import Dict, List, Any, Tuple
 
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -46,6 +50,15 @@ from sklearn.metrics import (
     accuracy_score, precision_recall_fscore_support,
     confusion_matrix, classification_report
 )
+
+# Try to import SMOTE for handling class imbalance
+try:
+    from imblearn.over_sampling import SMOTE
+    SMOTE_AVAILABLE = True
+except ImportError:
+    SMOTE_AVAILABLE = False
+    logger.warning("imbalanced-learn not installed. Install with: pip install imbalanced-learn")
+    logger.warning("Training will proceed without SMOTE (class imbalance may affect performance)")
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -386,6 +399,48 @@ def calculate_top_k_accuracy(y_true: np.ndarray, y_proba: np.ndarray, k: int = 2
     return correct / len(y_true)
 
 
+def save_confusion_matrix(
+    conf_matrix: np.ndarray,
+    class_names: List[str],
+    output_path: str = 'results/figures/confusion_matrix.png'
+):
+    """
+    Save confusion matrix as a heatmap image.
+    
+    Args:
+        conf_matrix: Confusion matrix array
+        class_names: List of class names
+        output_path: Path to save the figure
+    """
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create figure
+    plt.figure(figsize=(10, 8))
+    
+    # Plot heatmap
+    sns.heatmap(
+        conf_matrix,
+        annot=True,
+        fmt='d',
+        cmap='Blues',
+        xticklabels=class_names,
+        yticklabels=class_names,
+        cbar_kws={'label': 'Count'}
+    )
+    
+    plt.title('Confusion Matrix - Algorithm Selection', fontsize=14, fontweight='bold')
+    plt.xlabel('Predicted Algorithm', fontsize=12)
+    plt.ylabel('Actual Algorithm', fontsize=12)
+    plt.tight_layout()
+    
+    # Save figure
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    logger.info(f"Saved confusion matrix to: {output_file}")
+
+
 def train_model(
     features_df: pd.DataFrame,
     labels_df: pd.DataFrame,
@@ -420,6 +475,27 @@ def train_model(
     logger.info(f"Dataset: {X.shape[0]} samples, {X.shape[1]} features")
     logger.info(f"Classes: {list(class_names)}")
     
+    # Warn if dataset is small (less than 100 samples)
+    if X.shape[0] < 100:
+        logger.warning("\n" + "="*70)
+        logger.warning("WARNING: Small dataset detected!")
+        logger.warning(f"Dataset size: {X.shape[0]} samples")
+        logger.warning("Small datasets (<100 samples) produce preliminary results with high variance.")
+        logger.warning("Expect CV standard deviation ±10-20%.")
+        logger.warning("Recommendations:")
+        logger.warning("  1. Collect more benchmark data (target: 500+ samples)")
+        logger.warning("  2. Use ensemble methods and regularization")
+        logger.warning("  3. Interpret results cautiously - consider rule-based fallback")
+        logger.warning("="*70 + "\n")
+    
+    # Print class distribution
+    unique, counts = np.unique(y, return_counts=True)
+    logger.info("\nOriginal class distribution:")
+    for cls_idx, count in zip(unique, counts):
+        cls_name = class_names[cls_idx]
+        pct = (count / len(y)) * 100
+        logger.info(f"  {cls_name}: {count} samples ({pct:.1f}%)")
+    
     # Scale features
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -432,26 +508,133 @@ def train_model(
         stratify=y
     )
     
-    logger.info(f"Train set: {len(X_train)} samples")
+    logger.info(f"\nTrain set: {len(X_train)} samples")
     logger.info(f"Test set: {len(X_test)} samples")
     
+    # Check train set class distribution
+    train_unique, train_counts = np.unique(y_train, return_counts=True)
+    logger.info("\nTrain set class distribution:")
+    for cls_idx, count in zip(train_unique, train_counts):
+        cls_name = class_names[cls_idx]
+        pct = (count / len(y_train)) * 100
+        logger.info(f"  {cls_name}: {count} samples ({pct:.1f}%)")
+    
+    # Apply SMOTE to handle class imbalance
+    smote_applied = False
+    if SMOTE_AVAILABLE:
+        # Check if we have severe imbalance (minority class < 10% of majority)
+        class_counts = dict(zip(train_unique, train_counts))
+        min_count = min(train_counts)
+        max_count = max(train_counts)
+        imbalance_ratio = max_count / min_count
+        
+        logger.info(f"\nClass imbalance ratio: {imbalance_ratio:.2f}:1")
+        
+        if imbalance_ratio > 2.0 and min_count >= 2:
+            # Determine k_neighbors (must be < minority class size)
+            k_neighbors = min(2, min_count - 1) if min_count > 1 else 1
+            
+            logger.info(f"Applying SMOTE to balance classes (k_neighbors={k_neighbors})...")
+            
+            try:
+                smote = SMOTE(random_state=random_state, k_neighbors=k_neighbors)
+                X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
+                
+                # Update training data
+                X_train = X_train_resampled
+                y_train = y_train_resampled
+                smote_applied = True
+                
+                # Log new distribution
+                resampled_unique, resampled_counts = np.unique(y_train, return_counts=True)
+                logger.info("\nAfter SMOTE - Train set class distribution:")
+                for cls_idx, count in zip(resampled_unique, resampled_counts):
+                    cls_name = class_names[cls_idx]
+                    pct = (count / len(y_train)) * 100
+                    logger.info(f"  {cls_name}: {count} samples ({pct:.1f}%)")
+                
+                logger.info(f"Train set after SMOTE: {len(X_train)} samples")
+                
+            except Exception as e:
+                logger.warning(f"SMOTE failed: {e}")
+                logger.warning("Continuing with original (imbalanced) data")
+                logger.warning("Consider collecting more data for minority classes")
+        else:
+            logger.info("Class imbalance is moderate - proceeding without SMOTE")
+    else:
+        logger.warning("\nWARNING: SMOTE not available. Class imbalance may affect performance.")
+        logger.warning("Install imbalanced-learn: pip install imbalanced-learn")
+    
     # Initialize model with specified hyperparameters
+    # Hyperparameters optimized for small datasets (n<100):
+    # - Reduced n_estimators (20 vs 100) to prevent overfitting
+    # - Reduced max_depth (5 vs 10) - shallow trees for small data
+    # - Added min_samples_leaf=2 to prevent extreme splits
+    # - Added max_features='sqrt' for additional regularization
+    # - Added bootstrap=True for ensemble diversity
+    # 
+    # Note: If SMOTE was applied, don't use class_weight='balanced' (data is already balanced)
+    # If SMOTE was NOT applied, use class_weight='balanced' to handle imbalance
+    class_weight = None if smote_applied else 'balanced'
+    
+    # Use smaller hyperparameters for small datasets
+    n_samples = X.shape[0]
+    if n_samples < 100:
+        n_estimators = 20
+        max_depth = 5
+        logger.info("\nUsing reduced hyperparameters for small dataset:")
+        logger.info(f"  n_estimators: {n_estimators} (standard: 100)")
+        logger.info(f"  max_depth: {max_depth} (standard: 10)")
+    else:
+        n_estimators = 100
+        max_depth = 10
+    
     model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
         min_samples_split=5,
+        min_samples_leaf=2,      # Prevent overfitting on small datasets
+        max_features='sqrt',     # Additional regularization
+        bootstrap=True,          # Ensure bootstrap sampling for diversity
         random_state=random_state,
-        class_weight='balanced',
+        class_weight=class_weight,
         n_jobs=-1
     )
     
+    logger.info(f"\nModel configuration:")
+    logger.info(f"  class_weight: {class_weight}")
+    logger.info(f"  n_estimators: {n_estimators}")
+    logger.info(f"  max_depth: {max_depth}")
+    logger.info(f"  min_samples_split: 5")
+    logger.info(f"  min_samples_leaf: 2")
+    logger.info(f"  max_features: sqrt")
+    logger.info(f"  bootstrap: True")
+    
     # 5-fold stratified cross-validation on training set
-    logger.info(f"Performing {n_folds}-fold stratified cross-validation...")
+    # Note: Using 5-fold (not 10) for small datasets to ensure adequate samples per fold
+    logger.info(f"\nPerforming {n_folds}-fold stratified cross-validation...")
+    if n_samples < 100:
+        logger.info(f"Note: 5-fold CV recommended for small datasets (n={n_samples})")
     cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
     cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring='accuracy')
     
     logger.info(f"CV Scores: {cv_scores}")
     logger.info(f"CV Mean: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+    
+    # Warn about high variance in small datasets
+    if cv_scores.std() > 0.10:
+        logger.warning(f"\nHigh CV variance detected: ±{cv_scores.std() * 2:.1%}")
+        logger.warning("This is expected for small datasets (<100 samples).")
+        logger.warning("Model predictions may be uncertain. Consider rule-based fallback.")
+    
+    # Additional CV metrics using different scoring
+    cv_precision = cross_val_score(model, X_train, y_train, cv=cv, scoring='precision_weighted')
+    cv_recall = cross_val_score(model, X_train, y_train, cv=cv, scoring='recall_weighted')
+    cv_f1 = cross_val_score(model, X_train, y_train, cv=cv, scoring='f1_weighted')
+    
+    logger.info(f"CV Precision (weighted): {cv_precision.mean():.4f} (+/- {cv_precision.std() * 2:.4f})")
+    logger.info(f"CV Recall (weighted): {cv_recall.mean():.4f} (+/- {cv_recall.std() * 2:.4f})")
+    logger.info(f"CV F1 (weighted): {cv_f1.mean():.4f} (+/- {cv_f1.std() * 2:.4f})")
     
     # Train final model on full training set
     logger.info("Training final model on full training set...")
@@ -476,6 +659,19 @@ def train_model(
         output_dict=True,
         zero_division=0
     )
+    
+    # Save confusion matrix visualization
+    cm_path = Path(model_output).parent.parent / 'figures' / 'confusion_matrix.png'
+    save_confusion_matrix(conf_matrix, class_names, str(cm_path))
+    
+    # Log per-class performance
+    logger.info("\nPer-class performance on test set:")
+    for i, cls_name in enumerate(class_names):
+        logger.info(f"  {cls_name}:")
+        logger.info(f"    Precision: {precision[i]:.4f}")
+        logger.info(f"    Recall:    {recall[i]:.4f}")
+        logger.info(f"    F1-Score:  {f1[i]:.4f}")
+        logger.info(f"    Support:   {support[i]}")
     
     # Feature importance
     feature_importance = dict(zip(feature_cols, model.feature_importances_))
@@ -513,21 +709,29 @@ def train_model(
             'n_features': len(feature_cols),
             'feature_names': feature_cols,
             'n_classes': len(class_names),
-            'class_names': list(class_names)
+            'class_names': list(class_names),
+            'smote_applied': smote_applied,
+            'class_imbalance_ratio': float(imbalance_ratio) if smote_applied or not SMOTE_AVAILABLE else None
         },
         'hyperparameters': {
-            'n_estimators': 100,
-            'max_depth': 10,
+            'n_estimators': n_estimators,
+            'max_depth': max_depth,
             'min_samples_split': 5,
+            'min_samples_leaf': 2,
+            'max_features': 'sqrt',
+            'bootstrap': True,
             'random_state': random_state,
-            'class_weight': 'balanced',
+            'class_weight': class_weight,
             'n_jobs': -1
         },
         'cross_validation': {
             'n_folds': n_folds,
-            'scores': cv_scores.tolist(),
-            'mean': float(cv_scores.mean()),
-            'std': float(cv_scores.std())
+            'accuracy_scores': cv_scores.tolist(),
+            'accuracy_mean': float(cv_scores.mean()),
+            'accuracy_std': float(cv_scores.std()),
+            'precision_mean': float(cv_precision.mean()),
+            'recall_mean': float(cv_recall.mean()),
+            'f1_mean': float(cv_f1.mean())
         },
         'test_metrics': {
             'top1_accuracy': float(top1_accuracy),
@@ -547,7 +751,8 @@ def train_model(
         'files_saved': {
             'model': str(model_file),
             'scaler': str(scaler_file),
-            'label_encoder': str(encoder_file)
+            'label_encoder': str(encoder_file),
+            'confusion_matrix': str(cm_path)
         }
     }
     
@@ -572,10 +777,14 @@ def print_training_report(results: Dict[str, Any]):
     ds = results['dataset']
     print("DATASET:")
     print(f"  Total samples: {ds['total_samples']}")
-    print(f"  Train samples: {ds['train_samples']} (80%)")
-    print(f"  Test samples: {ds['test_samples']} (20%)")
+    print(f"  Train samples: {ds['train_samples']}")
+    print(f"  Test samples: {ds['test_samples']}")
     print(f"  Features: {ds['n_features']}")
     print(f"  Classes: {ds['n_classes']} - {ds['class_names']}")
+    if ds.get('smote_applied'):
+        print(f"  SMOTE applied: Yes (handled {ds.get('class_imbalance_ratio', 'N/A'):.2f}:1 imbalance)")
+    else:
+        print(f"  SMOTE applied: No")
     print()
     
     # Hyperparameters
@@ -592,10 +801,13 @@ def print_training_report(results: Dict[str, Any]):
     cv = results['cross_validation']
     print(f"CROSS-VALIDATION ({cv['n_folds']}-FOLD STRATIFIED):")
     print("-" * 70)
-    for i, score in enumerate(cv['scores'], 1):
+    for i, score in enumerate(cv['accuracy_scores'], 1):
         bar = "#" * int(score * 50)
         print(f"  Fold {i}: {score:.4f} {bar}")
-    print(f"  Mean:   {cv['mean']:.4f} (+/- {cv['std'] * 2:.4f})")
+    print(f"  Accuracy:  {cv['accuracy_mean']:.4f} (+/- {cv['accuracy_std'] * 2:.4f})")
+    print(f"  Precision: {cv['precision_mean']:.4f} (weighted)")
+    print(f"  Recall:    {cv['recall_mean']:.4f} (weighted)")
+    print(f"  F1-Score:  {cv['f1_mean']:.4f} (weighted)")
     print()
     
     # Test set metrics
@@ -743,7 +955,7 @@ def main():
     print_training_report(training_results)
     
     # Summary
-    cv_mean = training_results['cross_validation']['mean']
+    cv_mean = training_results['cross_validation']['accuracy_mean']
     top1_acc = training_results['test_metrics']['top1_accuracy']
     top2_acc = training_results['test_metrics']['top2_accuracy']
     

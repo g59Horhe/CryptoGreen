@@ -89,10 +89,20 @@ class CryptoBenchmark:
         
         Performs multiple runs of the encryption algorithm on the given file,
         measuring energy consumption, execution time, and calculating statistics.
+        Uses median (not mean) for primary energy statistics as specified in paper.
+        
+        Process:
+        1. Read file into memory
+        2. Warmup: 5 runs to warm CPU caches (discard results)
+        3. For each of 100 runs:
+           - Measure energy with RAPL (or SoftwareEnergyEstimator fallback)
+           - Measure CPU usage with psutil
+           - Measure memory usage
+           - Calculate throughput
+        4. Calculate statistics with 95% confidence intervals
         
         Args:
-            algorithm_name: One of ['AES-128', 'AES-256', 'ChaCha20', 
-                           'RSA-2048', 'RSA-4096', 'ECC-256']
+            algorithm_name: One of ['AES-128', 'AES-256', 'ChaCha20']
             file_path: Path to file to encrypt.
             runs: Number of repetitions (default 100).
             warmup_runs: Number of warmup runs to discard (default 5).
@@ -105,12 +115,12 @@ class CryptoBenchmark:
                 - file_type: File extension
                 - runs: Number of runs
                 - measurements: List of per-run measurements
-                - statistics: Computed statistics (median, mean, std, etc.)
+                - statistics: Computed statistics (median, mean, std, CI, etc.)
                 - timestamp: ISO 8601 timestamp
                 - hardware: Hardware information
                 
         Example:
-            >>> result = benchmark.benchmark_algorithm('AES-128', 'test.txt', runs=50)
+            >>> result = benchmark.benchmark_algorithm('AES-128', 'test.txt', runs=100)
             >>> print(f"Median energy: {result['statistics']['median_energy_j']:.6f} J")
         """
         path = Path(file_path)
@@ -118,41 +128,44 @@ class CryptoBenchmark:
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         
-        # Read file data
-        with open(file_path, 'rb') as f:
-            data = f.read()
-        
+        # 1. Read file into memory
+        data = path.read_bytes()
         file_size = len(data)
         file_type = path.suffix.lstrip('.').lower()
         
-        logger.info(f"Benchmarking {algorithm_name} on {path.name} ({file_size} bytes)")
+        logger.info(f"Benchmarking {algorithm_name} on {path.name} ({file_size:,} bytes)")
         
         # Get the encryption function
         encrypt_func = self._get_encrypt_function(algorithm_name, data)
         
-        # Pre-generate keys (don't measure key generation time)
+        # Pre-generate keys for this file (don't measure key generation time)
+        # Generate fresh keys per file to avoid reuse across different data
         keys = self._prepare_keys(algorithm_name)
         
-        # Warmup runs
-        logger.debug(f"Performing {warmup_runs} warmup runs...")
-        for _ in range(warmup_runs):
-            encrypt_func(**keys)
-        
-        # Measurement runs
-        measurements = []
-        
+        # Initialize psutil for accurate CPU measurement
         try:
             import psutil
             process = psutil.Process()
+            # Initialize CPU percent baseline (first call returns 0.0)
+            process.cpu_percent(interval=None)
             use_psutil = True
         except ImportError:
             use_psutil = False
             logger.warning("psutil not available, CPU/memory metrics will be limited")
         
+        # 2. Warmup runs - warm CPU caches, discard results
+        logger.debug(f"Performing {warmup_runs} warmup runs...")
+        for _ in range(warmup_runs):
+            encrypt_func(**keys)
+        
+        # 3. Measurement runs
+        measurements = []
+        
         for run_num in range(runs):
-            # Get CPU and memory before
+            # Get CPU usage (non-blocking, uses last interval)
             if use_psutil:
-                cpu_percent = process.cpu_percent()
+                cpu_percent = process.cpu_percent(interval=None)
+                # Get memory usage
                 memory_mb = process.memory_info().rss / (1024 * 1024)
             else:
                 cpu_percent = 0.0
@@ -162,7 +175,8 @@ class CryptoBenchmark:
             result = self.energy_meter.measure_function(encrypt_func, **keys)
             
             # Calculate throughput (MB/s)
-            throughput_mbps = (file_size / (1024 * 1024)) / result['duration_seconds'] if result['duration_seconds'] > 0 else 0
+            file_size_mb = file_size / (1024 * 1024)
+            throughput_mbps = file_size_mb / result['duration_seconds'] if result['duration_seconds'] > 0 else 0.0
             
             measurement = {
                 'run': run_num + 1,
@@ -176,25 +190,59 @@ class CryptoBenchmark:
             
             measurements.append(measurement)
         
-        # Calculate statistics
+        # 4. Calculate statistics using median (NOT mean) for energy as primary metric
         energy_values = [m['energy_joules'] for m in measurements]
         duration_values = [m['duration_seconds'] for m in measurements]
         throughput_values = [m['throughput_mbps'] for m in measurements]
         power_values = [m['average_power_watts'] for m in measurements]
+        cpu_values = [m['cpu_percent'] for m in measurements] if use_psutil else []
+        memory_values = [m['memory_mb'] for m in measurements] if use_psutil else []
+        
+        # Calculate 95% confidence intervals
+        energy_ci_lower, energy_ci_upper = self._calculate_confidence_interval(energy_values)
+        duration_ci_lower, duration_ci_upper = self._calculate_confidence_interval(duration_values)
         
         stats = {
+            # Energy statistics (median is primary metric per paper)
             'median_energy_j': statistics.median(energy_values),
             'mean_energy_j': statistics.mean(energy_values),
             'std_energy_j': statistics.stdev(energy_values) if len(energy_values) > 1 else 0.0,
             'min_energy_j': min(energy_values),
             'max_energy_j': max(energy_values),
+            'energy_ci_95_lower': energy_ci_lower,
+            'energy_ci_95_upper': energy_ci_upper,
+            
+            # Duration statistics
             'median_duration_s': statistics.median(duration_values),
             'mean_duration_s': statistics.mean(duration_values),
             'std_duration_s': statistics.stdev(duration_values) if len(duration_values) > 1 else 0.0,
+            'min_duration_s': min(duration_values),
+            'max_duration_s': max(duration_values),
+            'duration_ci_95_lower': duration_ci_lower,
+            'duration_ci_95_upper': duration_ci_upper,
+            
+            # Throughput statistics
             'mean_throughput_mbps': statistics.mean(throughput_values),
+            'median_throughput_mbps': statistics.median(throughput_values),
+            'std_throughput_mbps': statistics.stdev(throughput_values) if len(throughput_values) > 1 else 0.0,
+            
+            # Power statistics
             'median_power_w': statistics.median(power_values),
+            'mean_power_w': statistics.mean(power_values),
+            'std_power_w': statistics.stdev(power_values) if len(power_values) > 1 else 0.0,
+            
+            # Efficiency metric
             'energy_per_byte_uj': (statistics.median(energy_values) * 1_000_000) / file_size if file_size > 0 else 0.0,
+            'energy_per_mb_j': (statistics.median(energy_values) * 1024 * 1024) / file_size if file_size > 0 else 0.0,
         }
+        
+        # Add CPU/memory stats if available
+        if use_psutil and cpu_values:
+            stats['mean_cpu_percent'] = statistics.mean(cpu_values)
+            stats['median_cpu_percent'] = statistics.median(cpu_values)
+        if use_psutil and memory_values:
+            stats['mean_memory_mb'] = statistics.mean(memory_values)
+            stats['median_memory_mb'] = statistics.median(memory_values)
         
         result = {
             'algorithm': algorithm_name,
@@ -212,7 +260,8 @@ class CryptoBenchmark:
         }
         
         logger.info(
-            f"  {algorithm_name}: median={stats['median_energy_j']:.6f}J, "
+            f"  {algorithm_name}: median={stats['median_energy_j']:.6f}J "
+            f"[{stats['energy_ci_95_lower']:.6f}-{stats['energy_ci_95_upper']:.6f}], "
             f"time={stats['median_duration_s']:.4f}s, "
             f"throughput={stats['mean_throughput_mbps']:.2f}MB/s"
         )
@@ -226,11 +275,6 @@ class CryptoBenchmark:
         """
         from cryptogreen.algorithms import CryptoAlgorithms
         
-        # For RSA, we only encrypt a small key, not the full data
-        if algorithm_name in ['RSA-2048', 'RSA-4096']:
-            # RSA encrypts a 32-byte symmetric key
-            rsa_data = data[:32] if len(data) >= 32 else data.ljust(32, b'\x00')
-        
         def aes_128_encrypt(**kwargs):
             return CryptoAlgorithms.aes_128_encrypt(data, **kwargs)
         
@@ -240,28 +284,54 @@ class CryptoBenchmark:
         def chacha20_encrypt(**kwargs):
             return CryptoAlgorithms.chacha20_encrypt(data, **kwargs)
         
-        def rsa_2048_encrypt(**kwargs):
-            return CryptoAlgorithms.rsa_2048_encrypt_key(rsa_data)
-        
-        def rsa_4096_encrypt(**kwargs):
-            return CryptoAlgorithms.rsa_4096_encrypt_key(rsa_data)
-        
-        def ecc_256_sign(**kwargs):
-            return CryptoAlgorithms.ecc_256_sign(data)
-        
         function_map = {
             'AES-128': aes_128_encrypt,
             'AES-256': aes_256_encrypt,
             'ChaCha20': chacha20_encrypt,
-            'RSA-2048': rsa_2048_encrypt,
-            'RSA-4096': rsa_4096_encrypt,
-            'ECC-256': ecc_256_sign,
         }
         
         if algorithm_name not in function_map:
             raise ValueError(f"Unknown algorithm: {algorithm_name}")
         
         return function_map[algorithm_name]
+    
+    def _calculate_confidence_interval(
+        self,
+        values: list[float],
+        confidence: float = 0.95
+    ) -> tuple[float, float]:
+        """Calculate confidence interval for a list of values.
+        
+        Uses t-distribution for more accurate CI with smaller sample sizes.
+        
+        Args:
+            values: List of measurements.
+            confidence: Confidence level (default 0.95 for 95% CI).
+            
+        Returns:
+            Tuple of (lower_bound, upper_bound).
+        """
+        if len(values) < 2:
+            mean_val = values[0] if values else 0.0
+            return (mean_val, mean_val)
+        
+        n = len(values)
+        mean = statistics.mean(values)
+        std_err = statistics.stdev(values) / (n ** 0.5)
+        
+        # Use t-distribution for more accurate CI
+        # For n=100, t-value ≈ 1.984 (close to z=1.96 for normal)
+        try:
+            import scipy.stats
+            t_value = scipy.stats.t.ppf((1 + confidence) / 2, n - 1)
+        except ImportError:
+            # Fallback: use z-score approximation
+            # For 95% CI: z ≈ 1.96
+            t_value = 1.96 if confidence == 0.95 else 2.576  # 99% CI
+        
+        margin_of_error = t_value * std_err
+        
+        return (mean - margin_of_error, mean + margin_of_error)
     
     def _prepare_keys(self, algorithm_name: str) -> dict:
         """Pre-generate keys for an algorithm.
@@ -276,8 +346,7 @@ class CryptoBenchmark:
         elif algorithm_name == 'ChaCha20':
             return {'key': os.urandom(32), 'nonce': os.urandom(12)}
         else:
-            # RSA and ECC use cached keys internally
-            return {}
+            raise ValueError(f"Unknown algorithm: {algorithm_name}")
     
     def run_full_benchmark(
         self,

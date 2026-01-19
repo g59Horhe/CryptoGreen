@@ -62,6 +62,16 @@ class HybridSelector:
         self.rule_selector = RuleBasedSelector(benchmark_data)
         self.ml_selector = MLSelector(model_path)
         
+        # Track selector usage statistics
+        self._selection_stats = {
+            'both_agree': 0,
+            'ml_preferred': 0,
+            'rules_preferred': 0,
+            'rules_fallback': 0,
+            'security_override': 0,
+            'total_selections': 0,
+        }
+        
         logger.info("HybridSelector initialized")
         logger.info(f"  ML model trained: {self.ml_selector.is_trained}")
         logger.info(f"  AES-NI available: {self.rule_selector.hardware.get('has_aes_ni', False)}")
@@ -139,71 +149,58 @@ class HybridSelector:
                 print(f"  (Using fallback - model not trained)")
             print()
         
-        # Hybrid decision logic
+        # Hybrid decision logic (from paper Section III.D.3)
         algorithm = None
         confidence = 'medium'
         method = 'rules_preferred'
         rationale = ""
         
-        # Case 1: Both agree with high ML confidence
-        if rule_algorithm == ml_algorithm and ml_confidence > 0.8:
+        # Track this selection
+        self._selection_stats['total_selections'] += 1
+        
+        # Case 1: Both agree with high ML confidence (>0.8)
+        if rule_algorithm == ml_algorithm and ml_confidence > 0.8 and not ml_result.get('is_fallback'):
             algorithm = rule_algorithm
             confidence = 'high'
             method = 'both_agree'
             rationale = (
                 f"Both rule-based and ML selectors agree on {algorithm} "
-                f"with high confidence ({ml_confidence:.0%})"
+                f"with high ML confidence ({ml_confidence:.1%})"
             )
+            self._selection_stats['both_agree'] += 1
         
-        # Case 2: High security - trust rules (proven, interpretable)
+        # Case 2: High security - always prefer rules (proven security guarantees)
         elif security_level == 'high':
             algorithm = rule_result['algorithm']
             confidence = 'high'
-            method = 'security_override'
+            method = 'rules_preferred'
             rationale = (
-                f"High security level requested. Using rule-based {algorithm} "
-                f"for predictable security guarantees"
+                f"High security level requires rule-based {algorithm} "
+                f"for proven security guarantees. ML suggested {ml_algorithm} ({ml_confidence:.1%})"
             )
+            self._selection_stats['security_override'] += 1
         
-        # Case 3: Very high ML confidence
+        # Case 3: ML has high confidence (>0.8) and not fallback
         elif ml_confidence > 0.8 and not ml_result.get('is_fallback'):
             algorithm = ml_algorithm
             confidence = 'high'
             method = 'ml_preferred'
             rationale = (
-                f"ML strongly recommends {algorithm} ({ml_confidence:.0%} confidence) "
-                f"based on learned patterns"
-            )
-        
-        # Case 4: Moderate ML confidence
-        elif ml_confidence > 0.6 and not ml_result.get('is_fallback'):
-            algorithm = ml_algorithm
-            confidence = 'medium'
-            method = 'ml_preferred'
-            rationale = (
-                f"ML recommends {algorithm} ({ml_confidence:.0%} confidence). "
+                f"ML has high confidence ({ml_confidence:.1%}) for {algorithm}. "
                 f"Rule-based suggested {rule_algorithm}"
             )
+            self._selection_stats['ml_preferred'] += 1
         
-        # Case 5: Both agree (any confidence)
-        elif rule_algorithm == ml_algorithm:
-            algorithm = rule_algorithm
-            confidence = 'medium'
-            method = 'both_agree'
-            rationale = (
-                f"Both selectors agree on {algorithm}. "
-                f"ML confidence: {ml_confidence:.0%}"
-            )
-        
-        # Case 6: Default to rules
+        # Case 4: ML confidence is low (<0.8) or is fallback - use rules
         else:
             algorithm = rule_algorithm
             confidence = rule_result['confidence']
-            method = 'rules_preferred'
+            method = 'rules_fallback'
             rationale = (
-                f"Using rule-based {algorithm}. "
-                f"ML suggested {ml_algorithm} ({ml_confidence:.0%})"
+                f"Using rule-based {algorithm} due to low ML confidence ({ml_confidence:.1%}). "
+                f"ML suggested {ml_algorithm}"
             )
+            self._selection_stats['rules_fallback'] += 1
         
         # Log disagreements for analysis
         if rule_algorithm != ml_algorithm:
@@ -219,6 +216,13 @@ class HybridSelector:
             print(f"Confidence: {confidence}")
             print(f"Method: {method}")
             print(f"Rationale: {rationale}")
+            print()
+            print(f"Selector Usage Stats (session):")
+            print(f"  Both Agree (ML>0.8):  {self._selection_stats['both_agree']}")
+            print(f"  ML Preferred (ML>0.8): {self._selection_stats['ml_preferred']}")
+            print(f"  Rules Fallback (<0.8): {self._selection_stats['rules_fallback']}")
+            print(f"  Security Override:     {self._selection_stats['security_override']}")
+            print(f"  Total Selections:      {self._selection_stats['total_selections']}")
             print(f"{'=' * 60}")
         
         # Get performance estimates from rule selector
@@ -276,9 +280,10 @@ class HybridSelector:
         
         # Decision method
         method_explanations = {
-            'both_agree': "Both rule-based and ML selectors agreed on this choice",
-            'ml_preferred': "ML model had high confidence, overriding rules",
-            'rules_preferred': "Rule-based selection preferred for interpretability",
+            'both_agree': "Both rule-based and ML selectors agreed on this choice (ML confidence >0.8)",
+            'ml_preferred': "ML model had high confidence (>0.8), overriding rules",
+            'rules_preferred': "Rule-based selection preferred (high security requirement)",
+            'rules_fallback': "Rule-based selection used due to low ML confidence (<0.8)",
             'security_override': "High security requirement - using proven rules",
         }
         
@@ -427,3 +432,50 @@ class HybridSelector:
             True if ML model is trained and ready.
         """
         return self.ml_selector.is_trained
+    
+    def get_selection_statistics(self) -> dict:
+        """Get statistics on selector usage.
+        
+        Returns:
+            Dict with counts and percentages of how each selector was used.
+            
+        Example:
+            >>> stats = selector.get_selection_statistics()
+            >>> print(f"ML used: {stats['ml_percentage']:.1f}%")
+        """
+        total = self._selection_stats['total_selections']
+        
+        if total == 0:
+            return {
+                'total_selections': 0,
+                'both_agree': 0,
+                'ml_preferred': 0,
+                'rules_preferred': 0,
+                'rules_fallback': 0,
+                'security_override': 0,
+            }
+        
+        return {
+            'total_selections': total,
+            'both_agree': self._selection_stats['both_agree'],
+            'both_agree_percentage': (self._selection_stats['both_agree'] / total) * 100,
+            'ml_preferred': self._selection_stats['ml_preferred'],
+            'ml_preferred_percentage': (self._selection_stats['ml_preferred'] / total) * 100,
+            'rules_preferred': self._selection_stats['rules_preferred'],
+            'rules_preferred_percentage': (self._selection_stats['rules_preferred'] / total) * 100,
+            'rules_fallback': self._selection_stats['rules_fallback'],
+            'rules_fallback_percentage': (self._selection_stats['rules_fallback'] / total) * 100,
+            'security_override': self._selection_stats['security_override'],
+            'security_override_percentage': (self._selection_stats['security_override'] / total) * 100,
+        }
+    
+    def reset_statistics(self):
+        """Reset selector usage statistics."""
+        self._selection_stats = {
+            'both_agree': 0,
+            'ml_preferred': 0,
+            'rules_preferred': 0,
+            'rules_fallback': 0,
+            'security_override': 0,
+            'total_selections': 0,
+        }

@@ -1,0 +1,8 @@
+{
+  "train_size": 175,
+  "test_size": 44,
+  "cv_accuracy_mean": 0.7217758985200845,
+  "cv_accuracy_std": 0.0654730963982189,
+  "test_accuracy": 0.7272727272727273,
+  "timestamp": "20260119_193623"
+}

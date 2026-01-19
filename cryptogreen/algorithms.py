@@ -1,9 +1,8 @@
 """
 Cryptographic Algorithms Module
 
-This module provides a unified interface for all supported cryptographic
-algorithms including symmetric encryption (AES-128, AES-256, ChaCha20),
-asymmetric encryption (RSA-2048, RSA-4096), and digital signatures (ECC-256).
+This module provides a unified interface for all supported symmetric
+encryption algorithms (AES-128, AES-256, ChaCha20).
 
 Example:
     >>> from cryptogreen.algorithms import CryptoAlgorithms
@@ -18,8 +17,7 @@ from typing import Optional, Tuple
 
 # Cryptography library imports
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding, hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, ec, padding as asym_padding
+from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 
 # PyCryptodome for ChaCha20
@@ -29,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class CryptoAlgorithms:
-    """Unified interface for all cryptographic algorithms.
+    """Unified interface for symmetric encryption algorithms.
     
     This class provides static methods for each supported algorithm.
     All methods use cryptographically secure random key generation
@@ -39,9 +37,6 @@ class CryptoAlgorithms:
         - AES-128: 128-bit AES in CBC mode with PKCS7 padding
         - AES-256: 256-bit AES in CBC mode with PKCS7 padding
         - ChaCha20: 256-bit stream cipher
-        - RSA-2048: 2048-bit RSA with OAEP padding
-        - RSA-4096: 4096-bit RSA with OAEP padding
-        - ECC-256: ECDSA with NIST P-256 curve
     
     Example:
         >>> data = b"Secret message"
@@ -71,29 +66,7 @@ class CryptoAlgorithms:
             'nonce_size': 12,
             'description': 'ChaCha20 stream cipher',
         },
-        'RSA-2048': {
-            'type': 'asymmetric',
-            'key_size': 2048,  # bits
-            'max_encrypt_size': 190,  # bytes with OAEP SHA256
-            'description': 'RSA 2048-bit with OAEP padding',
-        },
-        'RSA-4096': {
-            'type': 'asymmetric',
-            'key_size': 4096,
-            'max_encrypt_size': 446,
-            'description': 'RSA 4096-bit with OAEP padding',
-        },
-        'ECC-256': {
-            'type': 'signature',
-            'curve': 'SECP256R1',
-            'description': 'ECDSA with NIST P-256 curve',
-        },
     }
-    
-    # Cache for RSA keys (key generation is expensive)
-    _rsa_2048_key = None
-    _rsa_4096_key = None
-    _ecc_256_key = None
     
     @staticmethod
     def aes_128_encrypt(
@@ -291,237 +264,6 @@ class CryptoAlgorithms:
         return cipher.decrypt(ciphertext)
     
     @classmethod
-    def rsa_2048_encrypt_key(
-        cls,
-        key_data: bytes,
-        public_key=None
-    ) -> bytes:
-        """Encrypt symmetric key with RSA-2048.
-        
-        This simulates RSA key exchange by encrypting a symmetric key
-        using RSA with OAEP padding.
-        
-        Args:
-            key_data: Symmetric key to encrypt (max 190 bytes for OAEP with SHA256).
-            public_key: RSA public key. If None, generates new key pair.
-            
-        Returns:
-            Encrypted key bytes.
-            
-        Note:
-            RSA is typically used only for key exchange, not for encrypting
-            large amounts of data. For large data, use hybrid encryption.
-            
-        Example:
-            >>> symmetric_key = os.urandom(32)  # AES-256 key
-            >>> encrypted_key = CryptoAlgorithms.rsa_2048_encrypt_key(symmetric_key)
-        """
-        max_size = cls.ALGORITHMS['RSA-2048']['max_encrypt_size']
-        if len(key_data) > max_size:
-            raise ValueError(
-                f"RSA-2048 can only encrypt up to {max_size} bytes with OAEP, "
-                f"got {len(key_data)} bytes"
-            )
-        
-        if public_key is None:
-            # Generate new key pair (cached for performance)
-            if cls._rsa_2048_key is None:
-                logger.debug("Generating RSA-2048 key pair...")
-                cls._rsa_2048_key = rsa.generate_private_key(
-                    public_exponent=65537,
-                    key_size=2048,
-                    backend=default_backend()
-                )
-            public_key = cls._rsa_2048_key.public_key()
-        
-        ciphertext = public_key.encrypt(
-            key_data,
-            asym_padding.OAEP(
-                mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
-        )
-        
-        return ciphertext
-    
-    @classmethod
-    def rsa_2048_decrypt_key(
-        cls,
-        ciphertext: bytes,
-        private_key=None
-    ) -> bytes:
-        """Decrypt RSA-2048 encrypted key.
-        
-        Args:
-            ciphertext: Encrypted key bytes.
-            private_key: RSA private key. If None, uses cached key.
-            
-        Returns:
-            Decrypted key bytes.
-        """
-        if private_key is None:
-            if cls._rsa_2048_key is None:
-                raise ValueError("No private key available for decryption")
-            private_key = cls._rsa_2048_key
-        
-        plaintext = private_key.decrypt(
-            ciphertext,
-            asym_padding.OAEP(
-                mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
-        )
-        
-        return plaintext
-    
-    @classmethod
-    def rsa_4096_encrypt_key(
-        cls,
-        key_data: bytes,
-        public_key=None
-    ) -> bytes:
-        """Encrypt symmetric key with RSA-4096.
-        
-        Args:
-            key_data: Symmetric key to encrypt (max 446 bytes for OAEP with SHA256).
-            public_key: RSA public key. If None, generates new key pair.
-            
-        Returns:
-            Encrypted key bytes.
-            
-        Example:
-            >>> symmetric_key = os.urandom(32)
-            >>> encrypted_key = CryptoAlgorithms.rsa_4096_encrypt_key(symmetric_key)
-        """
-        max_size = cls.ALGORITHMS['RSA-4096']['max_encrypt_size']
-        if len(key_data) > max_size:
-            raise ValueError(
-                f"RSA-4096 can only encrypt up to {max_size} bytes with OAEP, "
-                f"got {len(key_data)} bytes"
-            )
-        
-        if public_key is None:
-            if cls._rsa_4096_key is None:
-                logger.debug("Generating RSA-4096 key pair...")
-                cls._rsa_4096_key = rsa.generate_private_key(
-                    public_exponent=65537,
-                    key_size=4096,
-                    backend=default_backend()
-                )
-            public_key = cls._rsa_4096_key.public_key()
-        
-        ciphertext = public_key.encrypt(
-            key_data,
-            asym_padding.OAEP(
-                mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
-        )
-        
-        return ciphertext
-    
-    @classmethod
-    def rsa_4096_decrypt_key(
-        cls,
-        ciphertext: bytes,
-        private_key=None
-    ) -> bytes:
-        """Decrypt RSA-4096 encrypted key.
-        
-        Args:
-            ciphertext: Encrypted key bytes.
-            private_key: RSA private key. If None, uses cached key.
-            
-        Returns:
-            Decrypted key bytes.
-        """
-        if private_key is None:
-            if cls._rsa_4096_key is None:
-                raise ValueError("No private key available for decryption")
-            private_key = cls._rsa_4096_key
-        
-        plaintext = private_key.decrypt(
-            ciphertext,
-            asym_padding.OAEP(
-                mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
-        )
-        
-        return plaintext
-    
-    @classmethod
-    def ecc_256_sign(
-        cls,
-        data: bytes,
-        private_key=None
-    ) -> bytes:
-        """Sign data with ECC NIST P-256 (ECDSA).
-        
-        Args:
-            data: Data to sign.
-            private_key: EC private key. If None, generates new key pair.
-            
-        Returns:
-            Digital signature bytes.
-            
-        Example:
-            >>> data = b"Important document"
-            >>> signature = CryptoAlgorithms.ecc_256_sign(data)
-        """
-        if private_key is None:
-            if cls._ecc_256_key is None:
-                logger.debug("Generating ECC P-256 key pair...")
-                cls._ecc_256_key = ec.generate_private_key(
-                    ec.SECP256R1(),
-                    backend=default_backend()
-                )
-            private_key = cls._ecc_256_key
-        
-        signature = private_key.sign(
-            data,
-            ec.ECDSA(hashes.SHA256())
-        )
-        
-        return signature
-    
-    @classmethod
-    def ecc_256_verify(
-        cls,
-        data: bytes,
-        signature: bytes,
-        public_key=None
-    ) -> bool:
-        """Verify ECC NIST P-256 signature.
-        
-        Args:
-            data: Original data that was signed.
-            signature: Signature to verify.
-            public_key: EC public key. If None, uses cached key's public key.
-            
-        Returns:
-            True if signature is valid, False otherwise.
-        """
-        if public_key is None:
-            if cls._ecc_256_key is None:
-                raise ValueError("No public key available for verification")
-            public_key = cls._ecc_256_key.public_key()
-        
-        try:
-            public_key.verify(
-                signature,
-                data,
-                ec.ECDSA(hashes.SHA256())
-            )
-            return True
-        except Exception:
-            return False
-    
-    @classmethod
     def encrypt(
         cls,
         algorithm_name: str,
@@ -552,9 +294,6 @@ class CryptoAlgorithms:
             'AES-128': cls.aes_128_encrypt,
             'AES-256': cls.aes_256_encrypt,
             'ChaCha20': cls.chacha20_encrypt,
-            'RSA-2048': cls.rsa_2048_encrypt_key,
-            'RSA-4096': cls.rsa_4096_encrypt_key,
-            'ECC-256': cls.ecc_256_sign,
         }
         
         if algorithm_name not in algorithm_map:
@@ -575,9 +314,9 @@ class CryptoAlgorithms:
         Example:
             >>> names = CryptoAlgorithms.get_algorithm_names()
             >>> print(names)
-            ['AES-128', 'AES-256', 'ChaCha20', 'RSA-2048', 'RSA-4096', 'ECC-256']
+            ['AES-128', 'AES-256', 'ChaCha20']
         """
-        return ['AES-128', 'AES-256', 'ChaCha20', 'RSA-2048', 'RSA-4096', 'ECC-256']
+        return ['AES-128', 'AES-256', 'ChaCha20']
     
     @classmethod
     def get_algorithm_info(cls, algorithm_name: str) -> dict:
@@ -594,18 +333,6 @@ class CryptoAlgorithms:
         return cls.ALGORITHMS[algorithm_name].copy()
     
     @classmethod
-    def reset_cached_keys(cls) -> None:
-        """Clear all cached asymmetric keys.
-        
-        This forces new key generation on next use of RSA/ECC algorithms.
-        Useful for benchmarking key generation separately.
-        """
-        cls._rsa_2048_key = None
-        cls._rsa_4096_key = None
-        cls._ecc_256_key = None
-        logger.info("Cleared cached asymmetric keys")
-    
-    @classmethod
     def generate_keys(cls, algorithm_name: str) -> Tuple:
         """Pre-generate keys for an algorithm.
         
@@ -613,8 +340,7 @@ class CryptoAlgorithms:
             algorithm_name: Name of the algorithm.
             
         Returns:
-            Tuple of (key, iv/nonce) for symmetric algorithms,
-            or (private_key, public_key) for asymmetric algorithms.
+            Tuple of (key, iv/nonce) for the algorithm.
         """
         if algorithm_name == 'AES-128':
             return os.urandom(16), os.urandom(16)
@@ -622,25 +348,5 @@ class CryptoAlgorithms:
             return os.urandom(32), os.urandom(16)
         elif algorithm_name == 'ChaCha20':
             return os.urandom(32), os.urandom(12)
-        elif algorithm_name == 'RSA-2048':
-            private_key = rsa.generate_private_key(
-                public_exponent=65537,
-                key_size=2048,
-                backend=default_backend()
-            )
-            return private_key, private_key.public_key()
-        elif algorithm_name == 'RSA-4096':
-            private_key = rsa.generate_private_key(
-                public_exponent=65537,
-                key_size=4096,
-                backend=default_backend()
-            )
-            return private_key, private_key.public_key()
-        elif algorithm_name == 'ECC-256':
-            private_key = ec.generate_private_key(
-                ec.SECP256R1(),
-                backend=default_backend()
-            )
-            return private_key, private_key.public_key()
         else:
             raise ValueError(f"Unknown algorithm: {algorithm_name}")

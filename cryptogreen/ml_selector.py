@@ -57,9 +57,6 @@ class MLSelector:
         0: 'AES-128',
         1: 'AES-256',
         2: 'ChaCha20',
-        3: 'RSA-2048',
-        4: 'RSA-4096',
-        5: 'ECC-256',
     }
     
     LABEL_TO_INDEX = {v: k for k, v in ALGORITHM_LABELS.items()}

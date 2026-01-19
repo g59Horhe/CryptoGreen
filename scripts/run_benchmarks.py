@@ -50,8 +50,7 @@ from cryptogreen.energy_meter import RAPLEnergyMeter, RAPLNotAvailableError
 from cryptogreen.algorithms import CryptoAlgorithms
 from cryptogreen.utils import format_duration, get_system_info
 
-# Note: RSA and ECC excluded as they're used for key exchange/signatures,
-# not bulk file encryption. Direct energy comparison would be unfair.
+# Symmetric encryption algorithms for benchmarking
 DEFAULT_ALGORITHMS = ['AES-128', 'AES-256', 'ChaCha20']
 
 # Global for graceful shutdown

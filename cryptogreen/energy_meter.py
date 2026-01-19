@@ -485,35 +485,55 @@ class RAPLNotAvailableError(Exception):
     
     This exception includes setup instructions for enabling RAPL access
     on supported systems (Intel/AMD processors).
+    
+    IMPORTANT: AMD Ryzen processors (including Ryzen 7 7700X) use the 
+    intel-rapl interface, NOT a separate AMD interface.
     """
     
     def __init__(self, message: str = None):
         if WINDOWS:
             default_message = (
-                "RAPL interface is not available on this Windows system.\n\n"
-                "To enable RAPL access on Windows:\n"
-                "  Option 1 - LibreHardwareMonitor (recommended for AMD):\n"
-                "    1. Download: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases\n"
-                "    2. Install pythonnet: pip install pythonnet\n"
-                "    3. Copy LibreHardwareMonitorLib.dll to the cryptogreen folder\n"
-                "    4. Run your script as Administrator\n\n"
-                "  Option 2 - Intel Power Gadget (Intel CPUs only):\n"
-                "    1. Download from Intel website\n"
-                "    2. Install to default location\n\n"
-                "Supported hardware:\n"
-                "  - Intel Sandy Bridge and later\n"
-                "  - AMD Ryzen processors"
+                "RAPL interface is not available on this Windows system.\\n\\n"
+                "To enable RAPL access on Windows:\\n"
+                "  Option 1 - AMD uProf (recommended for AMD Ryzen):\\n"
+                "    1. Download AMD uProf from AMD Developer website\\n"
+                "    2. Install and run as Administrator\\n"
+                "    3. Provides hardware power counters for Ryzen CPUs\\n\\n"
+                "  Option 2 - LibreHardwareMonitor (works for AMD and Intel):\\n"
+                "    1. Download: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases\\n"
+                "    2. Install pythonnet: pip install pythonnet\\n"
+                "    3. Copy LibreHardwareMonitorLib.dll to the cryptogreen folder\\n"
+                "    4. Run your script as Administrator\\n\\n"
+                "  Option 3 - Intel Power Gadget (Intel CPUs only):\\n"
+                "    1. Download from Intel website\\n"
+                "    2. Install to default location\\n\\n"
+                "Fallback: CPU-time based estimation will be used automatically.\\n"
+                "This provides relative energy comparisons using CPU TDP values.\\n\\n"
+                "Supported hardware:\\n"
+                "  - AMD Ryzen 7000 series (including 7700X) - uses intel-rapl interface\\n"
+                "  - AMD Ryzen 5000/3000 series\\n"
+                "  - Intel Sandy Bridge (2011) and later"
             )
         else:
             default_message = (
-                "RAPL interface is not available on this system.\n\n"
-                "To enable RAPL access on Linux:\n"
-                "  1. Load the MSR module: sudo modprobe msr\n"
-                "  2. Set permissions: sudo chmod -R a+r /sys/class/powercap/intel-rapl/\n"
-                "  3. Verify access: cat /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj\n\n"
-                "Supported hardware:\n"
-                "  - Intel Sandy Bridge and later\n"
-                "  - AMD Ryzen processors\n\n"
+                "RAPL interface is not available on this Linux system.\\n\\n"
+                "To enable RAPL access on Linux:\\n\\n"
+                "  Step 1 - Load kernel modules:\\n"
+                "    sudo modprobe intel_rapl_common\\n"
+                "    sudo modprobe intel_rapl_msr\\n"
+                "    # For AMD Ryzen, the same modules work!\\n\\n"
+                "  Step 2 - Set permissions:\\n"
+                "    sudo chmod -R a+r /sys/class/powercap/intel-rapl/\\n\\n"
+                "  Step 3 - Verify access:\\n"
+                "    cat /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj\\n"
+                "    cat /sys/class/powercap/intel-rapl/intel-rapl:0/max_energy_range_uj\\n\\n"
+                "IMPORTANT for AMD Ryzen (including 7700X):\\n"
+                "  AMD Ryzen uses the 'intel-rapl' interface, NOT 'amd-rapl'.\\n"
+                "  This is correct behavior - the powercap RAPL driver is generic.\\n\\n"
+                "Supported hardware:\\n"
+                "  - AMD Ryzen 7000 series (including 7700X)\\n"
+                "  - AMD Ryzen 5000/3000 series\\n"
+                "  - Intel Sandy Bridge (2011) and later\\n\\n"
                 "If running in a VM or container, RAPL may not be accessible."
             )
         super().__init__(message or default_message)
@@ -525,6 +545,10 @@ class RAPLEnergyMeter:
     This class provides methods to read energy counters and measure the
     energy consumption of function executions. On Linux, it uses the powercap
     RAPL interface. On Windows, it uses LibreHardwareMonitor or Intel Power Gadget.
+    
+    IMPORTANT: AMD Ryzen processors (including Ryzen 7 7700X) use the Intel RAPL
+    interface via the powercap subsystem, NOT a separate AMD-specific interface.
+    The path is: /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj
     
     Attributes:
         rapl_path: Path to RAPL energy counter file (Linux only).
@@ -538,13 +562,19 @@ class RAPLEnergyMeter:
         >>> print(f"Power: {result['average_power_watts']:.2f} W")
     """
     
-    # Common RAPL paths for different systems (Linux)
+    # RAPL paths for different systems (Linux)
+    # Note: AMD Ryzen (Zen 2 and later) uses the intel-rapl interface
+    # via the powercap subsystem, not a separate amd-rapl interface.
     RAPL_PATHS = [
+        # Primary path for both Intel and AMD (via intel-rapl driver)
         "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj",
+        # Alternative path format (some kernels)
         "/sys/class/powercap/intel-rapl:0/energy_uj",
+        # AMD-specific path (rarely used, most AMD CPUs use intel-rapl)
         "/sys/class/powercap/amd-rapl/amd-rapl:0/energy_uj",
     ]
     
+    # Max energy range paths (for counter overflow handling)
     MAX_ENERGY_PATHS = [
         "/sys/class/powercap/intel-rapl/intel-rapl:0/max_energy_range_uj",
         "/sys/class/powercap/intel-rapl:0/max_energy_range_uj",
@@ -564,28 +594,73 @@ class RAPLEnergyMeter:
         """
         self._windows_reader = None
         self._is_windows = WINDOWS
+        self._cpu_info = self._detect_cpu_info()
         
         if self._is_windows:
             # Use Windows RAPL backend
             self._windows_reader = WindowsRAPLReader()
             self.rapl_path = None
             self.max_energy_range = 2**63  # Effectively unlimited for Windows
-            logger.info("RAPL initialized using Windows backend")
+            logger.info(f"RAPL initialized using Windows backend for {self._cpu_info.get('brand', 'Unknown CPU')}")
         else:
             # Use Linux powercap interface
             self.rapl_path = self._find_rapl_path(rapl_path)
             self.max_energy_range = self._read_max_energy_range()
             
-            logger.info(f"RAPL initialized: {self.rapl_path}")
-            logger.info(f"Max energy range: {self.max_energy_range} µJ")
+            # Log CPU and RAPL info
+            cpu_brand = self._cpu_info.get('brand', 'Unknown')
+            is_amd = 'amd' in cpu_brand.lower()
+            
+            logger.info(f"CPU detected: {cpu_brand}")
+            if is_amd:
+                logger.info("Note: AMD Ryzen uses intel-rapl interface via powercap")
+            logger.info(f"RAPL path: {self.rapl_path}")
+            logger.info(f"Max energy range: {self.max_energy_range:,} µJ ({self.max_energy_range / 1_000_000:.2f} J)")
             
             # Verify we can read energy
             try:
-                self.read_energy()
+                initial_energy = self.read_energy()
+                logger.info(f"Initial energy reading: {initial_energy:,} µJ")
             except Exception as e:
                 raise RAPLNotAvailableError(
                     f"RAPL path found but cannot read energy: {e}"
                 )
+    
+    def _detect_cpu_info(self) -> dict:
+        """Detect CPU information.
+        
+        Returns:
+            Dict with CPU brand, vendor, etc.
+        """
+        info = {'brand': 'Unknown', 'vendor': 'Unknown'}
+        
+        # Try py-cpuinfo first
+        try:
+            import cpuinfo
+            cpu_data = cpuinfo.get_cpu_info()
+            info['brand'] = cpu_data.get('brand_raw', 'Unknown')
+            info['vendor'] = cpu_data.get('vendor_id_raw', 'Unknown')
+            return info
+        except ImportError:
+            pass
+        except Exception:
+            pass
+        
+        # Try reading /proc/cpuinfo on Linux
+        if not WINDOWS:
+            try:
+                with open('/proc/cpuinfo', 'r') as f:
+                    for line in f:
+                        if line.startswith('model name'):
+                            info['brand'] = line.split(':')[1].strip()
+                        elif line.startswith('vendor_id'):
+                            info['vendor'] = line.split(':')[1].strip()
+                        if info['brand'] != 'Unknown' and info['vendor'] != 'Unknown':
+                            break
+            except Exception:
+                pass
+        
+        return info
     
     def _find_rapl_path(self, custom_path: Optional[str] = None) -> Path:
         """Find the RAPL energy counter path.
@@ -608,40 +683,116 @@ class RAPLEnergyMeter:
         
         for path in paths_to_check:
             path_obj = Path(path)
-            if path_obj.exists() and os.access(path_obj, os.R_OK):
-                return path_obj
+            if path_obj.exists():
+                if os.access(path_obj, os.R_OK):
+                    return path_obj
+                else:
+                    # Path exists but not readable - permission issue
+                    raise RAPLNotAvailableError(
+                        f"RAPL interface found but not readable: {path}\n\n"
+                        f"To fix permissions on Linux:\n"
+                        f"  sudo chmod a+r /sys/class/powercap/intel-rapl -R\n\n"
+                        f"Or add your user to the 'rapl' group if it exists:\n"
+                        f"  sudo usermod -a -G rapl $USER\n"
+                        f"  (then log out and back in)\n\n"
+                        f"For AMD Ryzen CPUs (including 7700X):\n"
+                        f"  The intel-rapl driver is used - this is correct!\n"
+                        f"  AMD Ryzen uses the same powercap interface."
+                    )
         
         # Check if powercap directory exists but no RAPL
         powercap = Path("/sys/class/powercap")
         if powercap.exists():
             available = list(powercap.iterdir())
+            available_names = [d.name for d in available]
+            
+            # Check if intel-rapl module needs to be loaded
             raise RAPLNotAvailableError(
-                f"Powercap exists but RAPL not found. Available: {available}\n"
-                "Try: sudo modprobe intel_rapl_common"
+                f"Powercap directory exists but RAPL not found.\n"
+                f"Available interfaces: {available_names}\n\n"
+                f"To enable RAPL on Linux (works for both Intel and AMD):\n"
+                f"  1. Load the RAPL kernel module:\n"
+                f"     sudo modprobe intel_rapl_common\n"
+                f"     sudo modprobe intel_rapl_msr\n\n"
+                f"  2. For AMD Ryzen specifically:\n"
+                f"     sudo modprobe rapl           # or\n"
+                f"     sudo modprobe intel_rapl_common\n\n"
+                f"  3. Verify RAPL is available:\n"
+                f"     ls /sys/class/powercap/\n\n"
+                f"  4. Set permissions:\n"
+                f"     sudo chmod a+r /sys/class/powercap/intel-rapl -R\n\n"
+                f"Note: AMD Ryzen 7 7700X uses the intel-rapl interface,\n"
+                f"not a separate amd-rapl interface."
             )
         
-        raise RAPLNotAvailableError()
+        # Powercap doesn't exist at all
+        raise RAPLNotAvailableError(
+            "RAPL interface is not available on this system.\n\n"
+            "The powercap subsystem is not present. This could mean:\n"
+            "  1. Running in a VM/container (RAPL not virtualized)\n"
+            "  2. Kernel doesn't have powercap support\n"
+            "  3. Very old CPU without RAPL support\n\n"
+            "To enable RAPL on Linux (Intel and AMD Ryzen):\n"
+            "  1. Ensure kernel config has: CONFIG_POWERCAP=y, CONFIG_INTEL_RAPL=m\n"
+            "  2. Load modules: sudo modprobe intel_rapl_common intel_rapl_msr\n"
+            "  3. For AMD: sudo modprobe rapl\n\n"
+            "Supported hardware:\n"
+            "  - Intel Sandy Bridge (2011) and later\n"
+            "  - AMD Ryzen (Zen architecture, 2017) and later\n\n"
+            "Your CPU: " + self._cpu_info.get('brand', 'Unknown')
+        )
     
     def _read_max_energy_range(self) -> int:
         """Read the maximum energy range before counter overflow.
         
+        The RAPL energy counter wraps around when it reaches max_energy_range_uj.
+        This value is essential for proper overflow handling:
+        
+        If (energy_end < energy_start):
+            energy_diff = (max_energy_range - energy_start) + energy_end
+        
         Returns:
             Maximum energy value in microjoules.
         """
-        # Try to find max_energy_range file
+        # First, try the max_energy_range file in the same directory as energy_uj
         rapl_dir = self.rapl_path.parent
         max_range_file = rapl_dir / "max_energy_range_uj"
         
         if max_range_file.exists():
             try:
                 with open(max_range_file, 'r') as f:
-                    return int(f.read().strip())
+                    max_range = int(f.read().strip())
+                    logger.debug(f"Read max_energy_range from {max_range_file}: {max_range:,} µJ")
+                    return max_range
             except Exception as e:
-                logger.warning(f"Could not read max_energy_range: {e}")
+                logger.warning(f"Could not read {max_range_file}: {e}")
         
-        # Default value for most systems (262 J on many Intel CPUs)
-        default_max = 262143328850  # ~262 kJ
-        logger.warning(f"Using default max_energy_range: {default_max}")
+        # Try other known paths
+        for path in self.MAX_ENERGY_PATHS:
+            path_obj = Path(path)
+            if path_obj.exists():
+                try:
+                    with open(path_obj, 'r') as f:
+                        max_range = int(f.read().strip())
+                        logger.debug(f"Read max_energy_range from {path}: {max_range:,} µJ")
+                        return max_range
+                except Exception:
+                    continue
+        
+        # Default values based on CPU type
+        # AMD Ryzen 7 7700X typically has ~262 kJ max range
+        # Intel CPUs vary but often around 262 kJ as well
+        cpu_brand = self._cpu_info.get('brand', '').lower()
+        
+        if 'amd' in cpu_brand or 'ryzen' in cpu_brand:
+            # AMD Ryzen default (32-bit counter at ~15.3W = ~262 kJ)
+            default_max = 262143328850  # ~262 kJ
+            logger.warning(f"Using default AMD max_energy_range: {default_max:,} µJ ({default_max/1_000_000:.2f} J)")
+        else:
+            # Intel default
+            default_max = 262143328850  # ~262 kJ (common Intel value)
+            logger.warning(f"Using default Intel max_energy_range: {default_max:,} µJ ({default_max/1_000_000:.2f} J)")
+        
         return default_max
     
     def read_energy(self) -> int:
@@ -678,7 +829,12 @@ class RAPLEnergyMeter:
         """Measure energy consumption of a function execution.
         
         This method handles RAPL counter overflow by checking if the
-        end value is less than the start value and adding max_energy_range.
+        end value is less than the start value. When overflow occurs:
+        
+            energy_diff = (max_energy_range - energy_start) + energy_end
+        
+        This is essential for long-running operations or when the counter
+        is close to wrapping around.
         
         Args:
             func: Function to measure.
@@ -692,6 +848,7 @@ class RAPLEnergyMeter:
                 - duration_seconds (float): Execution time in seconds
                 - average_power_watts (float): Average power in watts
                 - result: Return value of func
+                - overflow_detected (bool): Whether counter overflow occurred
                 
         Example:
             >>> meter = RAPLEnergyMeter()
@@ -711,12 +868,22 @@ class RAPLEnergyMeter:
         time_end = time.perf_counter()
         energy_end = self.read_energy()
         
-        # Calculate energy delta (handle overflow)
-        energy_diff = energy_end - energy_start
-        if energy_diff < 0:
-            # Counter wrapped around
-            energy_diff += self.max_energy_range
-            logger.debug(f"RAPL counter overflow detected, adjusted delta: {energy_diff}")
+        # Calculate energy delta with proper overflow handling
+        overflow_detected = False
+        if energy_end >= energy_start:
+            # Normal case: no overflow
+            energy_diff = energy_end - energy_start
+        else:
+            # Counter wrapped around: energy_end < energy_start
+            # Formula: (max_range - start) + end
+            energy_diff = (self.max_energy_range - energy_start) + energy_end
+            overflow_detected = True
+            logger.debug(
+                f"RAPL counter overflow detected: "
+                f"start={energy_start:,}, end={energy_end:,}, "
+                f"max_range={self.max_energy_range:,}, "
+                f"calculated_diff={energy_diff:,} µJ"
+            )
         
         duration = time_end - time_start
         
@@ -732,6 +899,7 @@ class RAPLEnergyMeter:
             'duration_seconds': duration,
             'average_power_watts': average_power,
             'result': result,
+            'overflow_detected': overflow_detected,
         }
     
     def measure_multiple(
@@ -794,34 +962,153 @@ class RAPLEnergyMeter:
     def get_available_domains() -> list[dict[str, str]]:
         """Get list of available RAPL measurement domains.
         
+        RAPL provides multiple measurement domains:
+        - package (intel-rapl:0): Total CPU package power
+        - core (intel-rapl:0:0): CPU cores only
+        - uncore (intel-rapl:0:1): Integrated graphics, cache, etc.
+        - dram (intel-rapl:0:2): Memory controller (not always available)
+        
+        Note: AMD Ryzen uses the intel-rapl interface but may have
+        different subdomains available than Intel CPUs.
+        
         Returns:
-            List of dicts with 'name' and 'path' for each domain.
+            List of dicts with 'name', 'path', 'readable', and 'max_energy' for each domain.
         """
         domains = []
+        
+        if WINDOWS:
+            # On Windows, return a simplified domain structure
+            return [{
+                'name': 'package',
+                'path': 'windows-backend',
+                'readable': True,
+                'max_energy': None,
+            }]
+        
         powercap = Path("/sys/class/powercap")
         
         if not powercap.exists():
             return domains
         
-        for item in powercap.iterdir():
-            if 'rapl' in item.name.lower():
-                energy_file = item / "energy_uj"
-                name_file = item / "name"
-                
-                if energy_file.exists():
-                    name = item.name
-                    if name_file.exists():
-                        try:
-                            name = name_file.read_text().strip()
-                        except Exception:
-                            pass
+        # Recursively find all RAPL domains
+        def find_rapl_domains(base_path: Path, depth: int = 0):
+            for item in base_path.iterdir():
+                if item.is_dir() and ('rapl' in item.name.lower() or depth > 0):
+                    energy_file = item / "energy_uj"
+                    name_file = item / "name"
+                    max_energy_file = item / "max_energy_range_uj"
                     
-                    domains.append({
-                        'name': name,
-                        'path': str(energy_file),
-                    })
+                    if energy_file.exists():
+                        # Get domain name
+                        name = item.name
+                        if name_file.exists():
+                            try:
+                                name = name_file.read_text().strip()
+                            except Exception:
+                                pass
+                        
+                        # Check readability
+                        readable = os.access(energy_file, os.R_OK)
+                        
+                        # Get max energy range
+                        max_energy = None
+                        if max_energy_file.exists():
+                            try:
+                                max_energy = int(max_energy_file.read_text().strip())
+                            except Exception:
+                                pass
+                        
+                        domains.append({
+                            'name': name,
+                            'path': str(energy_file),
+                            'readable': readable,
+                            'max_energy': max_energy,
+                            'directory': str(item),
+                        })
+                    
+                    # Recurse into subdirectories (for subdomains like core, uncore)
+                    if depth < 2:
+                        find_rapl_domains(item, depth + 1)
         
+        find_rapl_domains(powercap)
         return domains
+    
+    @staticmethod
+    def verify_amd_ryzen_support() -> dict:
+        """Verify RAPL support specifically for AMD Ryzen CPUs.
+        
+        This is useful for verifying that the AMD Ryzen 7 7700X (or similar)
+        is properly detected and RAPL is accessible.
+        
+        Returns:
+            Dict with verification results including:
+            - cpu_detected: CPU model name
+            - is_amd_ryzen: Boolean
+            - rapl_available: Boolean
+            - rapl_path: Path being used (or None)
+            - domains: List of available domains
+            - error: Error message if any
+        """
+        result = {
+            'cpu_detected': 'Unknown',
+            'is_amd_ryzen': False,
+            'rapl_available': False,
+            'rapl_path': None,
+            'domains': [],
+            'error': None,
+            'notes': [],
+        }
+        
+        # Detect CPU
+        try:
+            import cpuinfo
+            info = cpuinfo.get_cpu_info()
+            result['cpu_detected'] = info.get('brand_raw', 'Unknown')
+        except ImportError:
+            # Try /proc/cpuinfo on Linux
+            if not WINDOWS:
+                try:
+                    with open('/proc/cpuinfo', 'r') as f:
+                        for line in f:
+                            if line.startswith('model name'):
+                                result['cpu_detected'] = line.split(':')[1].strip()
+                                break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
+        # Check if AMD Ryzen
+        cpu_lower = result['cpu_detected'].lower()
+        result['is_amd_ryzen'] = 'amd' in cpu_lower and 'ryzen' in cpu_lower
+        
+        if result['is_amd_ryzen']:
+            result['notes'].append(
+                "AMD Ryzen detected - will use intel-rapl interface (this is correct)"
+            )
+        
+        # Check RAPL availability
+        result['rapl_available'] = RAPLEnergyMeter.is_available()
+        
+        if result['rapl_available']:
+            # Find the path being used
+            for path in RAPLEnergyMeter.RAPL_PATHS:
+                if Path(path).exists() and os.access(path, os.R_OK):
+                    result['rapl_path'] = path
+                    break
+            
+            # Get domains
+            result['domains'] = RAPLEnergyMeter.get_available_domains()
+        else:
+            if WINDOWS:
+                result['error'] = "Windows backend will be used (not hardware RAPL)"
+                result['notes'].append("Install LibreHardwareMonitor for better accuracy")
+            else:
+                result['error'] = "RAPL not available - check kernel modules and permissions"
+                result['notes'].append("Try: sudo modprobe intel_rapl_common")
+                result['notes'].append("Try: sudo chmod a+r /sys/class/powercap/intel-rapl -R")
+        
+        return result
 
 
 class SoftwareEnergyEstimator:

@@ -65,7 +65,7 @@ def generate_random_text(size: int) -> bytes:
         size: Target size in bytes.
         
     Returns:
-        Random text as bytes.
+        Random text as bytes of EXACTLY the target size.
     """
     # Lorem ipsum base text
     lorem = (
@@ -78,15 +78,16 @@ def generate_random_text(size: int) -> bytes:
         "culpa qui officia deserunt mollit anim id est laborum.\n"
     )
     
-    result = []
-    current_size = 0
+    # Repeat lorem text to fill the size
+    repeats = (size // len(lorem)) + 1
+    text = (lorem * repeats)[:size]
+    data = text.encode('utf-8')
     
-    while current_size < size:
-        result.append(lorem)
-        current_size += len(lorem)
+    # Ensure EXACTLY the target size
+    if len(data) < size:
+        data += b' ' * (size - len(data))
     
-    text = ''.join(result)[:size]
-    return text.encode('utf-8')
+    return data[:size]
 
 
 def generate_sql_data(size: int) -> bytes:
@@ -96,7 +97,7 @@ def generate_sql_data(size: int) -> bytes:
         size: Target size in bytes.
         
     Returns:
-        SQL statements as bytes.
+        SQL statements as bytes of EXACTLY the target size.
     """
     tables = ['users', 'orders', 'products', 'transactions', 'logs']
     
@@ -104,10 +105,10 @@ def generate_sql_data(size: int) -> bytes:
         "-- CryptoGreen Test SQL Data\n",
         "-- Generated for benchmarking purposes\n\n",
     ]
-    current_size = sum(len(line) for line in lines)
+    current_size = sum(len(line.encode('utf-8')) for line in lines)
     
     record_id = 1
-    while current_size < size:
+    while current_size < size - 100:  # Leave room for final padding
         table = random.choice(tables)
         
         if table == 'users':
@@ -128,238 +129,325 @@ def generate_sql_data(size: int) -> bytes:
             line = f"INSERT INTO logs (id, level, message) VALUES ({record_id}, 'INFO', '{message}');\n"
         
         lines.append(line)
-        current_size += len(line)
+        current_size += len(line.encode('utf-8'))
         record_id += 1
     
-    sql = ''.join(lines)[:size]
-    return sql.encode('utf-8')
+    sql = ''.join(lines)
+    data = sql.encode('utf-8')
+    
+    # Pad to exact size with SQL comments
+    if len(data) < size:
+        padding = b'-- ' + b'X' * (size - len(data) - 3)
+        data = data + padding
+    
+    return data[:size]
 
 
 def generate_jpeg_image(size: int) -> bytes:
-    """Generate a JPEG image of approximately the target size.
+    """Generate a JPEG image of EXACTLY the target size.
     
     Args:
         size: Target size in bytes.
         
     Returns:
-        JPEG image bytes.
+        JPEG image bytes of EXACTLY the target size.
     """
     try:
         from PIL import Image
         
         # Start with a base size and adjust
-        # JPEG compression is variable, so we need to iterate
-        width = height = 100
+        # For small sizes, use small image; for large, use larger image
+        if size < 10000:
+            width = height = 50
+        elif size < 100000:
+            width = height = 200
+        else:
+            # Estimate dimensions based on target size
+            pixels_needed = size // 2
+            dim = int(pixels_needed ** 0.5)
+            width = height = max(dim, 100)
         
-        # Estimate dimensions based on target size
-        # JPEG is roughly 1-3 bytes per pixel after compression
-        pixels_needed = size // 2
-        dim = int(pixels_needed ** 0.5)
-        width = height = max(dim, 10)
-        
-        # Create image with random colors for more realistic compression
-        image = Image.new('RGB', (width, height))
-        pixels = image.load()
-        
-        for i in range(width):
-            for j in range(height):
-                pixels[i, j] = (
-                    random.randint(0, 255),
-                    random.randint(0, 255),
-                    random.randint(0, 255)
-                )
+        # Create solid color image (compresses well, predictable size)
+        color = (random.randint(100, 200), random.randint(100, 200), random.randint(100, 200))
+        image = Image.new('RGB', (width, height), color)
         
         # Adjust quality to get closer to target size
         buffer = io.BytesIO()
         quality = 85
         
-        for _ in range(5):  # Try a few iterations
+        # Binary search for right quality/size combination
+        for attempt in range(10):
             buffer.seek(0)
             buffer.truncate()
             image.save(buffer, format='JPEG', quality=quality)
             current_size = buffer.tell()
             
-            if abs(current_size - size) < size * 0.1:  # Within 10%
+            if current_size == size:
+                break
+            elif abs(current_size - size) < 100:  # Close enough
                 break
             
             if current_size < size:
-                quality = min(quality + 5, 98)
-                # Make image larger
-                width = int(width * 1.2)
-                height = int(height * 1.2)
-                image = image.resize((width, height), Image.Resampling.LANCZOS)
+                # Need larger file
+                if quality < 95:
+                    quality = min(quality + 5, 95)
+                else:
+                    # Increase image size
+                    width = int(width * 1.1)
+                    height = int(height * 1.1)
+                    image = Image.new('RGB', (width, height), color)
             else:
+                # File too large
                 quality = max(quality - 5, 10)
         
         data = buffer.getvalue()
         
-        # Pad or trim to exact size if needed
+        # Pad or trim to EXACT size
         if len(data) < size:
-            # Add JPEG comment to pad (0xFF 0xFE length data)
-            padding_needed = size - len(data)
-            # Insert before end marker (0xFF 0xD9)
-            data = data[:-2] + b'\xFF\xFE' + padding_needed.to_bytes(2, 'big') + b'\x00' * (padding_needed - 4) + data[-2:]
+            # JPEG padding: insert before end marker (0xFF 0xD9)
+            padding_size = size - len(data)
+            if data.endswith(b'\xFF\xD9'):
+                # Add comment segment 0xFFFE (max 65535 bytes per segment)
+                if padding_size >= 4:
+                    # JPEG comment segment length is 2 bytes (includes length bytes themselves)
+                    # Max segment payload is 65535 - 2 = 65533 bytes
+                    remaining_padding = padding_size
+                    padded_data = data[:-2]  # Remove end marker temporarily
+                    
+                    while remaining_padding > 2:
+                        # Each comment can hold at most 65533 bytes of actual padding
+                        chunk_size = min(remaining_padding - 2, 65533)
+                        segment_len = chunk_size + 2  # +2 for the length bytes themselves
+                        
+                        # Ensure segment_len fits in 2 bytes (max 65535)
+                        if segment_len > 65535:
+                            segment_len = 65535
+                            chunk_size = 65533
+                        
+                        comment_chunk = b'\xFF\xFE' + segment_len.to_bytes(2, 'big') + b'\x00' * chunk_size
+                        padded_data += comment_chunk
+                        remaining_padding -= len(comment_chunk)
+                    
+                    # Add any remaining bytes as simple padding
+                    if remaining_padding > 0:
+                        padded_data += b'\x00' * remaining_padding
+                    
+                    data = padded_data + b'\xFF\xD9'  # Add back end marker
+                else:
+                    data = data + b'\x00' * padding_size
+            else:
+                data = data + b'\x00' * padding_size
         elif len(data) > size:
-            data = data[:size-2] + b'\xFF\xD9'  # Ensure valid JPEG ending
+            # Trim and ensure valid JPEG ending
+            data = data[:size-2] + b'\xFF\xD9'
         
         return data
         
     except ImportError:
-        logger.warning("PIL not available, generating random bytes for JPEG")
-        # Generate bytes with JPEG-like header
-        data = b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
-        data += os.urandom(size - len(data) - 2)
-        data += b'\xFF\xD9'  # JPEG end marker
+        logger.warning("PIL not available, generating JPEG-like bytes")
+        # JPEG header and end marker with random data
+        header = b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
+        end = b'\xFF\xD9'
+        middle_size = size - len(header) - len(end)
+        data = header + os.urandom(max(0, middle_size)) + end
         return data[:size]
 
 
 def generate_png_image(size: int) -> bytes:
-    """Generate a PNG image of approximately the target size.
+    """Generate a PNG image of EXACTLY the target size.
     
     Args:
         size: Target size in bytes.
         
     Returns:
-        PNG image bytes.
+        PNG image bytes of EXACTLY the target size.
     """
     try:
         from PIL import Image
+        import zlib
         
-        # PNG compression is more predictable
-        # Estimate: random data compresses to about 1 byte per pixel
-        pixels_needed = size
-        dim = int(pixels_needed ** 0.5)
-        width = height = max(dim, 10)
+        # For small sizes, use tiny image; for large, use bigger
+        if size < 1000:
+            width = height = 10
+        elif size < 10000:
+            width = height = 50
+        elif size < 100000:
+            width = height = 150
+        else:
+            # Estimate dimensions
+            pixels_needed = size
+            dim = int(pixels_needed ** 0.5)
+            width = height = max(dim // 2, 100)
         
-        # Create image with random pixels (hard to compress)
+        # Create gradient image (less compressible than solid color)
         image = Image.new('RGB', (width, height))
         pixels = image.load()
         
         for i in range(width):
             for j in range(height):
+                # Gradient pattern - harder to compress
                 pixels[i, j] = (
-                    random.randint(0, 255),
-                    random.randint(0, 255),
-                    random.randint(0, 255)
+                    (i * 255) // width,
+                    (j * 255) // height,
+                    ((i + j) * 255) // (width + height)
                 )
         
+        # Try different compression levels
         buffer = io.BytesIO()
-        image.save(buffer, format='PNG', compress_level=6)
+        compress_level = 6
+        
+        for attempt in range(10):
+            buffer.seek(0)
+            buffer.truncate()
+            image.save(buffer, format='PNG', compress_level=compress_level)
+            current_size = buffer.tell()
+            
+            if current_size == size or abs(current_size - size) < 100:
+                break
+            
+            if current_size < size * 0.9:
+                # Need more data - increase image size
+                width = int(width * 1.15)
+                height = int(height * 1.15)
+                image = Image.new('RGB', (width, height))
+                pixels = image.load()
+                for i in range(width):
+                    for j in range(height):
+                        pixels[i, j] = (
+                            (i * 255) // width,
+                            (j * 255) // height,
+                            ((i + j) * 255) // (width + height)
+                        )
+            elif current_size > size:
+                # Try more compression
+                compress_level = min(compress_level + 1, 9)
+        
         data = buffer.getvalue()
         
-        # Adjust size by resizing
-        while len(data) < size * 0.8:
-            width = int(width * 1.2)
-            height = int(height * 1.2)
-            image = image.resize((width, height), Image.Resampling.NEAREST)
-            for i in range(width):
-                for j in range(height):
-                    pixels = image.load()
-                    pixels[i, j] = (
-                        random.randint(0, 255),
-                        random.randint(0, 255),
-                        random.randint(0, 255)
-                    )
-            buffer = io.BytesIO()
-            image.save(buffer, format='PNG', compress_level=6)
-            data = buffer.getvalue()
+        # Pad to exact size with tEXt chunk
+        if len(data) < size and data.endswith(b'IEND\xaeB`\x82'):
+            padding_needed = size - len(data)
+            if padding_needed >= 12:  # Minimum chunk size
+                chunk_data = b'CryptoGreen benchmark padding: ' + b'X' * (padding_needed - 50)
+                chunk_len = len(chunk_data)
+                crc = zlib.crc32(b'tEXt' + chunk_data) & 0xffffffff
+                
+                chunk = (
+                    chunk_len.to_bytes(4, 'big') +
+                    b'tEXt' +
+                    chunk_data +
+                    crc.to_bytes(4, 'big')
+                )
+                
+                # Insert before IEND
+                data = data[:-12] + chunk + data[-12:]
         
-        # Pad to exact size by adding PNG chunks
+        # Final adjustment - pad with null bytes if still short
         if len(data) < size:
-            # Add padding using tEXt chunk
-            padding = size - len(data)
-            chunk_data = b'Comment\x00' + b'X' * (padding - 12)
-            chunk_len = len(chunk_data)
-            
-            import zlib
-            crc = zlib.crc32(b'tEXt' + chunk_data) & 0xffffffff
-            
-            chunk = (
-                chunk_len.to_bytes(4, 'big') +
-                b'tEXt' +
-                chunk_data +
-                crc.to_bytes(4, 'big')
-            )
-            
-            # Insert before IEND
-            data = data[:-12] + chunk + data[-12:]
+            data = data[:-4] + b'\x00' * (size - len(data)) + data[-4:]
         
         return data[:size]
         
     except ImportError:
-        logger.warning("PIL not available, generating random bytes for PNG")
-        # PNG header
+        logger.warning("PIL not available, generating PNG-like bytes")
+        # PNG signature
         header = b'\x89PNG\r\n\x1a\n'
-        data = header + os.urandom(size - len(header))
+        # Minimal IHDR chunk
+        ihdr = b'\x00\x00\x00\x0dIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde'
+        # IEND chunk
+        iend = b'\x00\x00\x00\x00IEND\xaeB`\x82'
+        
+        middle_size = size - len(header) - len(ihdr) - len(iend)
+        middle = os.urandom(max(0, middle_size))
+        
+        data = header + ihdr + middle + iend
         return data[:size]
 
 
 def generate_mp4_video(size: int) -> bytes:
-    """Generate an MP4 video file of approximately the target size.
+    """Generate an MP4 video file of EXACTLY the target size.
     
     Args:
         size: Target size in bytes.
         
     Returns:
-        MP4 video bytes (or MP4-like binary data).
+        MP4 video bytes of EXACTLY the target size.
     """
     # Try using ffmpeg if available
     try:
         import subprocess
         import tempfile
         
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
-            tmp_path = tmp.name
-        
-        # Calculate duration for target size (rough estimate: 100KB/s at low bitrate)
-        duration = max(1, size // (100 * 1024))
-        bitrate = (size * 8) // duration if duration > 0 else 1000
-        
-        cmd = [
-            'ffmpeg', '-y',
-            '-f', 'lavfi',
-            '-i', f'color=c=black:s=320x240:d={duration}',
-            '-c:v', 'libx264',
-            '-b:v', f'{bitrate}',
-            '-an',  # No audio
-            tmp_path
-        ]
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=60
-        )
-        
-        if result.returncode == 0 and os.path.exists(tmp_path):
-            with open(tmp_path, 'rb') as f:
-                data = f.read()
-            os.unlink(tmp_path)
+        # Only try ffmpeg for larger files (>10KB) as it has overhead
+        if size > 10000:
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
+                tmp_path = tmp.name
             
-            # Pad or trim to target size
-            if len(data) < size:
-                data += b'\x00' * (size - len(data))
-            return data[:size]
-    except Exception as e:
-        logger.debug(f"ffmpeg not available: {e}")
+            # Calculate duration and bitrate for target size
+            # Base overhead ~5KB for MP4 container
+            target_video_size = max(size - 5000, 1000)
+            duration = max(1, target_video_size // (50 * 1024))  # ~50KB/s base
+            bitrate = (target_video_size * 8) // max(duration, 1)
+            
+            cmd = [
+                'ffmpeg', '-y', '-loglevel', 'error',
+                '-f', 'lavfi',
+                '-i', f'color=c=black:s=160x120:d={duration}',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-b:v', f'{bitrate}',
+                '-maxrate', f'{bitrate}',
+                '-bufsize', f'{bitrate * 2}',
+                '-an',  # No audio
+                '-movflags', '+faststart',
+                tmp_path
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0 and os.path.exists(tmp_path):
+                with open(tmp_path, 'rb') as f:
+                    data = f.read()
+                os.unlink(tmp_path)
+                
+                # Pad or trim to exact size
+                if len(data) < size:
+                    # Add null padding
+                    data += b'\x00' * (size - len(data))
+                
+                return data[:size]
+    except (ImportError, FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+        logger.debug(f"ffmpeg not available or failed: {e}")
     
-    # Fallback: generate valid MP4-like structure
-    # Minimal ftyp box + random mdat
-    ftyp = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom'
+    # Fallback: generate minimal valid MP4 structure
+    # ftyp box (file type)
+    ftyp = b'\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2mp41'
+    
+    # free box for padding (can be any size)
     mdat_size = size - len(ftyp) - 8
-    mdat = mdat_size.to_bytes(4, 'big') + b'mdat' + os.urandom(mdat_size)
+    if mdat_size < 0:
+        mdat_size = 0
     
-    return (ftyp + mdat)[:size]
+    # mdat box (media data) - filled with zeros
+    mdat_header = (mdat_size + 8).to_bytes(4, 'big') + b'mdat'
+    mdat_content = b'\x00' * mdat_size
+    
+    data = ftyp + mdat_header + mdat_content
+    return data[:size]
 
 
 def generate_pdf_document(size: int) -> bytes:
-    """Generate a PDF document of approximately the target size.
+    """Generate a PDF document of EXACTLY the target size.
     
     Args:
         size: Target size in bytes.
         
     Returns:
-        PDF document bytes.
+        PDF document bytes of EXACTLY the target size.
     """
     try:
         from reportlab.lib.pagesizes import letter
@@ -368,96 +456,131 @@ def generate_pdf_document(size: int) -> bytes:
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         
-        # Generate text content
+        # Generate text content to fill pages
         y_position = 750
         chars_written = 0
-        target_chars = size // 2  # Rough estimate
+        target_chars = size  # Overestimate to ensure we have enough
+        
+        text_line = "CryptoGreen benchmark test data. " * 3
         
         while chars_written < target_chars:
-            text = ''.join(random.choices(string.ascii_letters + ' ', k=80))
-            c.drawString(50, y_position, text)
-            chars_written += 80
-            y_position -= 12
-            
             if y_position < 50:
                 c.showPage()
                 y_position = 750
+            
+            c.drawString(50, y_position, text_line[:80])
+            chars_written += 80
+            y_position -= 15
         
         c.save()
         data = buffer.getvalue()
         
-        # Pad to target size
+        # Pad to target size with PDF comments
         if len(data) < size:
-            # Add PDF comment to pad
-            padding = b'%' + b'X' * (size - len(data) - 1)
-            # Insert before %%EOF
+            # PDF comments can be added before %%EOF
+            padding_size = size - len(data)
+            padding = b'\n%' + b'X' * (padding_size - 2) + b'\n'
+            
+            # Find %%EOF and insert padding before it
             eof_pos = data.rfind(b'%%EOF')
             if eof_pos > 0:
                 data = data[:eof_pos] + padding + data[eof_pos:]
+            else:
+                data = data + padding
         
         return data[:size]
         
     except ImportError:
         logger.warning("reportlab not available, generating minimal PDF")
-        # Minimal valid PDF
-        pdf = b"""%PDF-1.4
-1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
-2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
-3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >> endobj
-xref
-0 4
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-trailer << /Size 4 /Root 1 0 R >>
-startxref
-190
-%%EOF
-"""
-        # Pad with comments
-        if len(pdf) < size:
-            padding = b'\n%' + b'X' * (size - len(pdf) - 2) + b'\n'
-            pdf = pdf[:-6] + padding + b'%%EOF\n'
+        # Minimal valid PDF structure
+        pdf_header = b"%PDF-1.4\n"
+        pdf_catalog = b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        pdf_pages = b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+        pdf_page = b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n"
+        pdf_xref = b"xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n"
+        pdf_trailer = b"trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n200\n%%EOF\n"
         
-        return pdf[:size]
+        pdf_base = pdf_header + pdf_catalog + pdf_pages + pdf_page + pdf_xref + pdf_trailer
+        
+        # Pad with comments if needed
+        if len(pdf_base) < size:
+            padding_size = size - len(pdf_base)
+            # Insert padding before trailer
+            padding = b'%' + b'CryptoGreen-' * (padding_size // 12) + b'X' * (padding_size % 12) + b'\n'
+            
+            trailer_pos = pdf_base.rfind(b'trailer')
+            if trailer_pos > 0:
+                data = pdf_base[:trailer_pos] + padding + pdf_base[trailer_pos:]
+            else:
+                data = pdf_base + padding
+        else:
+            data = pdf_base
+        
+        return data[:size]
 
 
 def generate_zip_file(size: int) -> bytes:
-    """Generate a ZIP file of approximately the target size.
+    """Generate a ZIP file of EXACTLY the target size.
     
     Args:
         size: Target size in bytes.
         
     Returns:
-        ZIP file bytes.
+        ZIP file bytes of EXACTLY the target size.
     """
     buffer = io.BytesIO()
     
-    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        # ZIP overhead is roughly 100-200 bytes per file
-        # For very small files, just add minimal content
-        content_size = max(1, size - 200)  # Ensure at least 1 byte
-        content = os.urandom(content_size)
-        zf.writestr('data.bin', content)
+    # ZIP has overhead (headers, central directory), estimate ~100-200 bytes per file
+    # For very small sizes, use uncompressed random data
+    if size < 200:
+        # Minimal ZIP with tiny file
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_STORED) as zf:
+            content = b'X' * max(1, size - 150)
+            zf.writestr('data.txt', content)
+    else:
+        # Larger files - use compression
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Estimate content size needed
+            # Compressed random data typically reduces to ~60-80% of original
+            content_size = int(size * 0.9)  # Slightly less to account for headers
+            
+            # Random data compresses well, text compresses better
+            # Mix of both for predictable size
+            content = os.urandom(content_size // 2) + b'CryptoGreen' * (content_size // 22)
+            zf.writestr('data.bin', content)
     
     data = buffer.getvalue()
     
-    # Adjust if needed
-    if len(data) < size:
-        # Add more files
+    # Adjust to exact size
+    attempt = 0
+    while len(data) != size and attempt < 5:
         buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            remaining = max(1, size - 100)
-            file_num = 1
-            while remaining > 0:
-                chunk_size = min(remaining, 1024 * 1024)
-                zf.writestr(f'data_{file_num}.bin', os.urandom(chunk_size))
-                remaining -= chunk_size + 50  # Approximate overhead
-                file_num += 1
+        
+        if len(data) < size:
+            # Need more data
+            shortage = size - len(data)
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # Increase content size
+                content_size = int((size + shortage) * 0.9)
+                content = os.urandom(content_size // 2) + b'X' * (content_size // 2)
+                zf.writestr('data.bin', content)
+        else:
+            # Too much data
+            excess = len(data) - size
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                content_size = int((size - excess) * 0.9)
+                content = os.urandom(max(1, content_size // 2)) + b'Y' * max(1, content_size // 2)
+                zf.writestr('data.bin', content)
+        
         data = buffer.getvalue()
+        attempt += 1
     
-    return data[:size] if len(data) > size else data
+    # Final padding/trimming
+    if len(data) < size:
+        # ZIP files can have trailing data (not part of archive) - safe to pad
+        data += b'\x00' * (size - len(data))
+    
+    return data[:size]
 
 
 def generate_file(file_type: str, size: int, output_path: Path) -> bool:
@@ -508,14 +631,14 @@ def generate_file(file_type: str, size: int, output_path: Path) -> bool:
 
 
 def verify_file(file_path: Path, expected_size: int) -> bool:
-    """Verify a generated file.
+    """Verify a generated file has EXACTLY the expected size.
     
     Args:
         file_path: Path to file.
         expected_size: Expected size in bytes.
         
     Returns:
-        True if file is valid, False otherwise.
+        True if file is EXACTLY the expected size, False otherwise.
     """
     if not file_path.exists():
         logger.error(f"File does not exist: {file_path}")
@@ -523,13 +646,11 @@ def verify_file(file_path: Path, expected_size: int) -> bool:
     
     actual_size = file_path.stat().st_size
     
-    # Allow 10% tolerance for compressed formats
-    tolerance = expected_size * 0.1
-    
-    if abs(actual_size - expected_size) > tolerance:
-        logger.warning(
+    if actual_size != expected_size:
+        logger.error(
             f"Size mismatch for {file_path.name}: "
-            f"expected {expected_size}, got {actual_size}"
+            f"expected {expected_size} bytes, got {actual_size} bytes "
+            f"(diff: {actual_size - expected_size:+d})"
         )
         return False
     
@@ -538,15 +659,20 @@ def verify_file(file_path: Path, expected_size: int) -> bool:
 
 def generate_test_data(
     output_dir: str = 'data/test_files',
-    verify: bool = False,
-    verbose: bool = False
+    verify: bool = True,
+    verbose: bool = False,
+    force: bool = False
 ) -> dict:
     """Generate all test files for benchmarking.
     
+    Generates EXACTLY 49 test files (7 types × 7 sizes).
+    Each file will be EXACTLY the target size in bytes.
+    
     Args:
         output_dir: Output directory for test files.
-        verify: Whether to verify files after creation.
+        verify: Whether to verify files have exact sizes after creation.
         verbose: Show detailed progress.
+        force: Regenerate files even if they exist.
         
     Returns:
         Dict with generation statistics.
@@ -558,48 +684,98 @@ def generate_test_data(
     created = 0
     failed = 0
     skipped = 0
+    verified = 0
+    verification_failed = 0
     
-    logger.info(f"Generating {total_files} test files in {output_dir}")
-    logger.info(f"File types: {FILE_TYPES}")
-    logger.info(f"Sizes: {list(SIZES.keys())}")
+    logger.info("=" * 70)
+    logger.info(f"CryptoGreen Test Data Generator")
+    logger.info(f"Generating {total_files} test files (7 types × 7 sizes)")
+    logger.info(f"Output directory: {output_dir}")
+    logger.info("=" * 70)
+    logger.info(f"File types: {', '.join(FILE_TYPES)}")
+    logger.info(f"File sizes: {', '.join(SIZES.keys())}")
+    logger.info("=" * 70)
     
     for file_type in FILE_TYPES:
         type_dir = output_path / file_type
         type_dir.mkdir(exist_ok=True)
         
+        logger.info(f"\nGenerating {file_type.upper()} files...")
+        
         for size_name, size_bytes in SIZES.items():
             filename = f"{file_type}_{size_name}.{file_type}"
             file_path = type_dir / filename
             
-            if file_path.exists():
+            if file_path.exists() and not force:
                 if verbose:
-                    logger.info(f"Skipping existing: {filename}")
+                    logger.info(f"  ✓ Skipping existing: {filename}")
                 skipped += 1
+                
+                # Still verify if requested
+                if verify:
+                    if verify_file(file_path, size_bytes):
+                        verified += 1
+                    else:
+                        verification_failed += 1
                 continue
             
             if verbose:
-                logger.info(f"Generating: {filename} ({size_bytes} bytes)")
+                logger.info(f"  → Generating: {filename} ({size_bytes:,} bytes)")
+            else:
+                # Show progress without verbose
+                print(f"  Generating {filename}...", end=' ', flush=True)
             
             success = generate_file(file_type, size_bytes, file_path)
             
             if success:
                 created += 1
                 
+                # Verify exact size
                 if verify:
-                    if not verify_file(file_path, size_bytes):
-                        logger.warning(f"Verification failed: {filename}")
+                    if verify_file(file_path, size_bytes):
+                        verified += 1
+                        actual_size = file_path.stat().st_size
+                        if verbose:
+                            logger.info(f"    ✓ Verified: {actual_size:,} bytes (exact match)")
+                        else:
+                            print(f"✓ ({file_path.stat().st_size:,} bytes)")
+                    else:
+                        verification_failed += 1
+                        actual_size = file_path.stat().st_size if file_path.exists() else 0
+                        logger.error(f"    ✗ Verification FAILED: {actual_size:,} bytes (expected {size_bytes:,})")
+                        if not verbose:
+                            print(f"✗ FAILED")
+                else:
+                    if not verbose:
+                        print("✓")
             else:
                 failed += 1
+                logger.error(f"    ✗ Generation FAILED: {filename}")
+                if not verbose:
+                    print("✗ FAILED")
     
-    # Create .gitkeep files
+    # Create .gitkeep files to preserve directory structure
     for file_type in FILE_TYPES:
         gitkeep = output_path / file_type / '.gitkeep'
         gitkeep.touch()
     
-    logger.info(f"\nGeneration complete:")
-    logger.info(f"  Created: {created}")
-    logger.info(f"  Skipped: {skipped}")
-    logger.info(f"  Failed: {failed}")
+    logger.info("\n" + "=" * 70)
+    logger.info("Generation Summary:")
+    logger.info("=" * 70)
+    logger.info(f"  Total expected:         {total_files}")
+    logger.info(f"  Created:                {created}")
+    logger.info(f"  Skipped (existing):     {skipped}")
+    logger.info(f"  Failed:                 {failed}")
+    if verify:
+        logger.info(f"  Verified (exact size):  {verified}")
+        logger.info(f"  Verification failed:    {verification_failed}")
+    logger.info("=" * 70)
+    
+    if verification_failed > 0:
+        logger.warning(f"\n⚠ {verification_failed} file(s) did not match expected size!")
+    
+    if failed == 0 and verification_failed == 0:
+        logger.info("\n✓ All test files generated successfully with exact sizes!")
     
     return {
         'output_dir': str(output_path),
@@ -607,13 +783,33 @@ def generate_test_data(
         'created': created,
         'skipped': skipped,
         'failed': failed,
+        'verified': verified,
+        'verification_failed': verification_failed,
     }
 
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Generate test data for CryptoGreen benchmarks'
+        description='Generate test data for CryptoGreen benchmarks - EXACTLY 49 files (7 types × 7 sizes)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+File Types: txt, jpg, png, mp4, pdf, sql, zip (7 types)
+File Sizes: 64B, 1KB, 10KB, 100KB, 1MB, 10MB, 100MB (7 sizes)
+Total:      7 × 7 = 49 files
+
+Each file will be EXACTLY the specified size in bytes.
+
+Examples:
+  # Generate all files with verification
+  python scripts/generate_test_data.py --verify
+
+  # Regenerate all files (overwrite existing)
+  python scripts/generate_test_data.py --force --verify
+
+  # Generate with verbose output
+  python scripts/generate_test_data.py --verbose --verify
+        """
     )
     parser.add_argument(
         '--output-dir',
@@ -624,7 +820,19 @@ def main():
     parser.add_argument(
         '--verify',
         action='store_true',
-        help='Verify files after creation'
+        default=True,
+        help='Verify files have exact sizes after creation (default: enabled)'
+    )
+    parser.add_argument(
+        '--no-verify',
+        dest='verify',
+        action='store_false',
+        help='Skip verification of file sizes'
+    )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Regenerate files even if they already exist'
     )
     parser.add_argument(
         '--verbose', '-v',
@@ -640,10 +848,12 @@ def main():
     stats = generate_test_data(
         output_dir=args.output_dir,
         verify=args.verify,
-        verbose=args.verbose
+        verbose=args.verbose,
+        force=args.force
     )
     
-    if stats['failed'] > 0:
+    # Exit with error code if any failures
+    if stats['failed'] > 0 or stats.get('verification_failed', 0) > 0:
         sys.exit(1)
 
 
