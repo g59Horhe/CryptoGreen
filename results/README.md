@@ -6,8 +6,8 @@ This directory contains the results from the CryptoGreen benchmark and model tra
 
 ```
 results/
-├── models_20260119_194917/
-│   ├── selector_model.pkl           (Trained RandomForest model)
+├── models_20260119_193623/
+│   ├── selector_model.pkl           (Trained RandomForest model, 244 KB)
 │   └── training_results.json        (CV & test accuracy, feature importance)
 └── figures/                          (Publication-ready figures)
     ├── energy_vs_size.png/pdf
