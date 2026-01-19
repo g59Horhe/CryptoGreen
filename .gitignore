@@ -51,6 +51,11 @@ Thumbs.db
 .coverage
 htmlcov/
 
-# Large data files (optional - uncomment if too large for GitHub)
-# data/public_datasets/*.tar.gz
-# data/complete_benchmark_dataset/silesia_*
+# Large data files - keep locally only
+data/complete_benchmark_dataset/
+data/public_datasets/
+results/complete_benchmark_*/raw/*.json
+
+# Keep metadata and summaries only
+!data/README.md
+!results/complete_benchmark_*/summary.json
