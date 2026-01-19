@@ -284,7 +284,9 @@ class CryptoBenchmark:
         test_files_dir: str = 'data/test_files',
         runs: int = 100,
         algorithms: Optional[list[str]] = None,
-        save_incremental: bool = True
+        save_incremental: bool = True,
+        file_sizes: Optional[list[str]] = None,
+        output_prefix: str = 'benchmark'
     ) -> None:
         """Run complete benchmark suite.
         
@@ -296,11 +298,14 @@ class CryptoBenchmark:
             runs: Repetitions per configuration.
             algorithms: List of algorithms to test (None = all).
             save_incremental: Save results after each file (default True).
+            file_sizes: List of file size suffixes to include (e.g., ['64B', '1KB']).
+                       None means include all sizes.
+            output_prefix: Prefix for output files (default 'benchmark').
             
         Saves:
-            - results/benchmarks/raw/benchmark_TIMESTAMP.json
+            - results/benchmarks/raw/{output_prefix}_TIMESTAMP.json
             - results/benchmarks/processed/summary_TIMESTAMP.csv
-            - results/benchmarks/logs/benchmark_TIMESTAMP.log
+            - results/benchmarks/logs/{output_prefix}_TIMESTAMP.log
         """
         from cryptogreen.algorithms import CryptoAlgorithms
         from cryptogreen.utils import ProgressTracker
@@ -317,6 +322,14 @@ class CryptoBenchmark:
         test_files = list(test_dir.rglob('*'))
         test_files = [f for f in test_files if f.is_file() and not f.name.startswith('.')]
         
+        # Filter by file sizes if specified
+        if file_sizes:
+            test_files = [
+                f for f in test_files
+                if any(size in f.name for size in file_sizes)
+            ]
+            logger.info(f"Filtered to {len(test_files)} files matching sizes: {file_sizes}")
+        
         if not test_files:
             raise ValueError(f"No test files found in {test_files_dir}")
         
@@ -328,7 +341,11 @@ class CryptoBenchmark:
         
         # Setup logging to file
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = self.output_dir / 'logs' / f'benchmark_{timestamp}.log'
+        log_file = self.output_dir / 'logs' / f'{output_prefix}_{timestamp}.log'
+        
+        # Store output_prefix for save methods
+        self._output_prefix = output_prefix
+        self._timestamp = timestamp
         
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
@@ -401,7 +418,8 @@ class CryptoBenchmark:
     
     def _save_incremental(self, timestamp: str) -> None:
         """Save incremental results to prevent data loss."""
-        incremental_file = self.output_dir / 'raw' / f'benchmark_{timestamp}_incremental.json'
+        prefix = getattr(self, '_output_prefix', 'benchmark')
+        incremental_file = self.output_dir / 'raw' / f'{prefix}_{timestamp}_incremental.json'
         
         with open(incremental_file, 'w') as f:
             json.dump(self.results, f, indent=2, default=str)
@@ -415,10 +433,12 @@ class CryptoBenchmark:
         Returns:
             Path to saved file.
         """
+        prefix = getattr(self, '_output_prefix', 'benchmark')
+        
         if filename is None:
             filename = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        output_file = self.output_dir / 'raw' / f'benchmark_{filename}.json'
+        output_file = self.output_dir / 'raw' / f'{prefix}_{filename}.json'
         
         # Add metadata
         output_data = {
@@ -479,8 +499,7 @@ class CryptoBenchmark:
         logger.info(f"Summary CSV saved to: {output_file}")
         return str(output_file)
     
-    @staticmethod
-    def get_hardware_info() -> dict:
+    def get_hardware_info(self) -> dict:
         """Collect hardware information for reproducibility.
         
         Returns:
@@ -499,6 +518,10 @@ class CryptoBenchmark:
             'python_version': platform.python_version(),
             'cpu_governor': 'unknown',
         }
+        
+        # Windows-specific detection
+        if platform.system() == 'Windows':
+            info = self._get_windows_system_info(info)
         
         # Read /proc/cpuinfo on Linux
         cpuinfo_path = Path('/proc/cpuinfo')
@@ -550,6 +573,93 @@ class CryptoBenchmark:
         
         return info
     
+    def _get_windows_system_info(self, info: dict) -> dict:
+        """Get system information on Windows.
+        
+        Args:
+            info: Base info dict to populate.
+            
+        Returns:
+            Updated info dict with Windows-specific data.
+        """
+        import subprocess
+        
+        # Get CPU model using WMIC
+        try:
+            result = subprocess.run(
+                ['wmic', 'cpu', 'get', 'name'],
+                capture_output=True, text=True, timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            lines = [l.strip() for l in result.stdout.strip().split('\n') if l.strip()]
+            if len(lines) > 1:
+                info['cpu_model'] = lines[1]
+        except Exception as e:
+            logger.debug(f"WMIC CPU query failed: {e}")
+            # Fallback to platform.processor()
+            proc = platform.processor()
+            if proc:
+                info['cpu_model'] = proc
+        
+        # Get physical/logical cores
+        try:
+            result = subprocess.run(
+                ['wmic', 'cpu', 'get', 'NumberOfCores,NumberOfLogicalProcessors'],
+                capture_output=True, text=True, timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            lines = [l.strip() for l in result.stdout.strip().split('\n') if l.strip()]
+            if len(lines) > 1:
+                parts = lines[1].split()
+                if len(parts) >= 2:
+                    info['cpu_cores'] = int(parts[0])
+                    info['cpu_threads'] = int(parts[1])
+        except Exception as e:
+            logger.debug(f"WMIC core count failed: {e}")
+        
+        # Check for AES-NI by running a quick encryption test
+        info['has_aes_ni'] = self._check_aes_ni_windows()
+        
+        # Get kernel/OS version
+        info['kernel'] = platform.version()
+        info['cpu_governor'] = 'N/A (Windows)'
+        
+        return info
+    
+    def _check_aes_ni_windows(self) -> bool:
+        """Check if AES-NI is available on Windows by testing encryption speed.
+        
+        Returns:
+            True if AES-NI appears to be available.
+        """
+        try:
+            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+            from cryptography.hazmat.backends import default_backend
+            import time
+            
+            # Generate test data
+            key = os.urandom(32)
+            iv = os.urandom(16)
+            data = os.urandom(1024 * 1024)  # 1MB
+            
+            cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+            encryptor = cipher.encryptor()
+            
+            # Time the encryption
+            start = time.perf_counter()
+            _ = encryptor.update(data)
+            elapsed = time.perf_counter() - start
+            
+            # If 1MB encrypts in less than 20ms, likely hardware-accelerated
+            # Software AES on modern CPUs is ~50-100ms for 1MB
+            has_aesni = elapsed < 0.02
+            logger.debug(f"AES-NI check: 1MB encrypted in {elapsed*1000:.2f}ms -> {'Yes' if has_aesni else 'No'}")
+            return has_aesni
+            
+        except Exception as e:
+            logger.debug(f"AES-NI check failed: {e}")
+            return False
+
     def load_results(self, file_path: str) -> list[dict]:
         """Load benchmark results from JSON file.
         

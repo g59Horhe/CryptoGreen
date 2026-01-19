@@ -436,8 +436,8 @@ def generate_zip_file(size: int) -> bytes:
     
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         # ZIP overhead is roughly 100-200 bytes per file
-        # Generate random data that doesn't compress well
-        content_size = size - 200  # Reserve for ZIP structure
+        # For very small files, just add minimal content
+        content_size = max(1, size - 200)  # Ensure at least 1 byte
         content = os.urandom(content_size)
         zf.writestr('data.bin', content)
     
@@ -448,7 +448,7 @@ def generate_zip_file(size: int) -> bytes:
         # Add more files
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            remaining = size - 100
+            remaining = max(1, size - 100)
             file_num = 1
             while remaining > 0:
                 chunk_size = min(remaining, 1024 * 1024)

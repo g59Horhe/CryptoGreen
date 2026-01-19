@@ -1,0 +1,727 @@
+{
+  "timestamp": "2026-01-18T23:50:29.229951",
+  "summary": {
+    "total_configurations": 49,
+    "baseline_algorithm": "AES-256",
+    "mean_savings_pct": 15.889046699849358,
+    "median_savings_pct": 14.87172907724949
+  },
+  "statistics": {
+    "all_files": {
+      "count": 49,
+      "mean_savings_pct": 15.889046699849358,
+      "median_savings_pct": 14.87172907724949,
+      "std_savings_pct": 9.848284254964828,
+      "min_savings_pct": 0.0,
+      "max_savings_pct": 51.920122887864814,
+      "total_energy_saved_j": 11.365464000000001,
+      "total_baseline_energy_j": 60.6927685
+    },
+    "files_above_10kb": {
+      "count": 35,
+      "mean_savings_pct": 16.07255652721486,
+      "median_savings_pct": 16.719857109908446,
+      "std_savings_pct": 5.868909878097639,
+      "min_savings_pct": 0.0,
+      "max_savings_pct": 33.38225333032288,
+      "total_energy_saved_j": 11.361218000000001,
+      "total_baseline_energy_j": 60.671352
+    },
+    "by_size_category": {
+      "tiny": {
+        "count": 7,
+        "mean_savings_pct": 8.095087748736745,
+        "median_savings_pct": 13.696498054474704,
+        "algorithms_used": {
+          "ChaCha20": 4,
+          "AES-256": 3
+        }
+      },
+      "small": {
+        "count": 7,
+        "mean_savings_pct": 22.76545651413445,
+        "median_savings_pct": 9.645034062387943,
+        "algorithms_used": {
+          "ChaCha20": 6,
+          "AES-128": 1
+        }
+      },
+      "medium": {
+        "count": 14,
+        "mean_savings_pct": 14.66706449048638,
+        "median_savings_pct": 13.941759379945992,
+        "algorithms_used": {
+          "AES-128": 13,
+          "AES-256": 1
+        }
+      },
+      "large": {
+        "count": 7,
+        "mean_savings_pct": 17.2597080564644,
+        "median_savings_pct": 16.719857109908446,
+        "algorithms_used": {
+          "AES-128": 7
+        }
+      },
+      "huge": {
+        "count": 14,
+        "mean_savings_pct": 16.88447279931857,
+        "median_savings_pct": 16.80972265870838,
+        "algorithms_used": {
+          "AES-128": 14
+        }
+      }
+    },
+    "by_file_type": {
+      "jpg": {
+        "count": 7,
+        "mean_savings_pct": 19.08889145841841,
+        "median_savings_pct": 18.846849902580615,
+        "total_energy_saved_j": 1.6013649999999995
+      },
+      "mp4": {
+        "count": 7,
+        "mean_savings_pct": 13.821217932621703,
+        "median_savings_pct": 14.856005118026939,
+        "total_energy_saved_j": 1.5950069999999994
+      },
+      "pdf": {
+        "count": 7,
+        "mean_savings_pct": 18.220349135844,
+        "median_savings_pct": 15.264848185892257,
+        "total_energy_saved_j": 1.5893720000000002
+      },
+      "png": {
+        "count": 7,
+        "mean_savings_pct": 13.860094847736363,
+        "median_savings_pct": 14.852673217342439,
+        "total_energy_saved_j": 1.6696745000000002
+      },
+      "sql": {
+        "count": 7,
+        "mean_savings_pct": 14.544496008100666,
+        "median_savings_pct": 14.363282858927063,
+        "total_energy_saved_j": 1.6433245000000005
+      },
+      "txt": {
+        "count": 7,
+        "mean_savings_pct": 16.826928679398566,
+        "median_savings_pct": 16.218748990165572,
+        "total_energy_saved_j": 1.631924
+      },
+      "zip": {
+        "count": 7,
+        "mean_savings_pct": 14.861348836825796,
+        "median_savings_pct": 14.475431523006776,
+        "total_energy_saved_j": 1.6347970000000007
+      }
+    },
+    "statistical_tests": {
+      "paired_t_test": {
+        "t_statistic": -3.2406417878124363,
+        "p_value": 0.0026687302081871474,
+        "significant_at_005": true,
+        "significant_at_001": true
+      },
+      "effect_size": {
+        "cohens_d": 0.5477684390041414,
+        "interpretation": "medium"
+      },
+      "wilcoxon_test": {
+        "w_statistic": 0.0,
+        "p_value": 3.6528331903032994e-07
+      },
+      "sample_size": 35
+    }
+  },
+  "detailed_results": [
+    {
+      "config": "jpg_64",
+      "file_type": "jpg",
+      "file_size": 64,
+      "size_category": "tiny",
+      "optimal_algorithm": "AES-256",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001302,
+      "baseline_energy_j": 0.001302,
+      "energy_saved_j": 0.0,
+      "savings_pct": 0.0
+    },
+    {
+      "config": "jpg_1024",
+      "file_type": "jpg",
+      "file_size": 1024,
+      "size_category": "small",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001252,
+      "baseline_energy_j": 0.002604,
+      "energy_saved_j": 0.001352,
+      "savings_pct": 51.920122887864814
+    },
+    {
+      "config": "jpg_10240",
+      "file_type": "jpg",
+      "file_size": 10240,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001772,
+      "baseline_energy_j": 0.001915,
+      "energy_saved_j": 0.00014300000000000011,
+      "savings_pct": 7.467362924281991
+    },
+    {
+      "config": "jpg_102400",
+      "file_type": "jpg",
+      "file_size": 102400,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.005943,
+      "baseline_energy_j": 0.0074675,
+      "energy_saved_j": 0.0015244999999999998,
+      "savings_pct": 20.415132239705386
+    },
+    {
+      "config": "jpg_1048576",
+      "file_type": "jpg",
+      "file_size": 1048576,
+      "size_category": "large",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.07686,
+      "baseline_energy_j": 0.0961965,
+      "energy_saved_j": 0.019336500000000006,
+      "savings_pct": 20.10104317724658
+    },
+    {
+      "config": "jpg_10485760",
+      "file_type": "jpg",
+      "file_size": 10485760,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.6734655,
+      "baseline_energy_j": 0.7911185000000001,
+      "energy_saved_j": 0.11765300000000001,
+      "savings_pct": 14.87172907724949
+    },
+    {
+      "config": "jpg_104857600",
+      "file_type": "jpg",
+      "file_size": 104857600,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 6.292491500000001,
+      "baseline_energy_j": 7.7538475,
+      "energy_saved_j": 1.4613559999999994,
+      "savings_pct": 18.846849902580615
+    },
+    {
+      "config": "mp4_64",
+      "file_type": "mp4",
+      "file_size": 64,
+      "size_category": "tiny",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0011,
+      "baseline_energy_j": 0.001286,
+      "energy_saved_j": 0.00018599999999999997,
+      "savings_pct": 14.463452566096421
+    },
+    {
+      "config": "mp4_1024",
+      "file_type": "mp4",
+      "file_size": 1024,
+      "size_category": "small",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001251,
+      "baseline_energy_j": 0.001352,
+      "energy_saved_j": 0.00010099999999999996,
+      "savings_pct": 7.47041420118343
+    },
+    {
+      "config": "mp4_10240",
+      "file_type": "mp4",
+      "file_size": 10240,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001802,
+      "baseline_energy_j": 0.001924,
+      "energy_saved_j": 0.00012199999999999993,
+      "savings_pct": 6.340956340956337
+    },
+    {
+      "config": "mp4_102400",
+      "file_type": "mp4",
+      "file_size": 102400,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0061195,
+      "baseline_energy_j": 0.0074719999999999995,
+      "energy_saved_j": 0.0013524999999999995,
+      "savings_pct": 18.100910064239823
+    },
+    {
+      "config": "mp4_1048576",
+      "file_type": "mp4",
+      "file_size": 1048576,
+      "size_category": "large",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0776325,
+      "baseline_energy_j": 0.0932185,
+      "energy_saved_j": 0.015586000000000003,
+      "savings_pct": 16.719857109908446
+    },
+    {
+      "config": "mp4_10485760",
+      "file_type": "mp4",
+      "file_size": 10485760,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.676091,
+      "baseline_energy_j": 0.794056,
+      "energy_saved_j": 0.11796499999999999,
+      "savings_pct": 14.856005118026939
+    },
+    {
+      "config": "mp4_104857600",
+      "file_type": "mp4",
+      "file_size": 104857600,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 6.305906,
+      "baseline_energy_j": 7.7656005,
+      "energy_saved_j": 1.4596944999999995,
+      "savings_pct": 18.796930127940517
+    },
+    {
+      "config": "pdf_64",
+      "file_type": "pdf",
+      "file_size": 64,
+      "size_category": "tiny",
+      "optimal_algorithm": "AES-256",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001311,
+      "baseline_energy_j": 0.001311,
+      "energy_saved_j": 0.0,
+      "savings_pct": 0.0
+    },
+    {
+      "config": "pdf_1024",
+      "file_type": "pdf",
+      "file_size": 1024,
+      "size_category": "small",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001344,
+      "baseline_energy_j": 0.0026335,
+      "energy_saved_j": 0.0012895,
+      "savings_pct": 48.96525536358459
+    },
+    {
+      "config": "pdf_10240",
+      "file_type": "pdf",
+      "file_size": 10240,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0017475,
+      "baseline_energy_j": 0.0019234999999999999,
+      "energy_saved_j": 0.00017599999999999994,
+      "savings_pct": 9.149987002859367
+    },
+    {
+      "config": "pdf_102400",
+      "file_type": "pdf",
+      "file_size": 102400,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.005897,
+      "baseline_energy_j": 0.00743,
+      "energy_saved_j": 0.0015329999999999996,
+      "savings_pct": 20.632570659488554
+    },
+    {
+      "config": "pdf_1048576",
+      "file_type": "pdf",
+      "file_size": 1048576,
+      "size_category": "large",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0807365,
+      "baseline_energy_j": 0.095281,
+      "energy_saved_j": 0.014544500000000002,
+      "savings_pct": 15.264848185892257
+    },
+    {
+      "config": "pdf_10485760",
+      "file_type": "pdf",
+      "file_size": 10485760,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.6731045,
+      "baseline_energy_j": 0.7898625,
+      "energy_saved_j": 0.11675800000000003,
+      "savings_pct": 14.782066498915954
+    },
+    {
+      "config": "pdf_104857600",
+      "file_type": "pdf",
+      "file_size": 104857600,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 6.306253,
+      "baseline_energy_j": 7.761324,
+      "energy_saved_j": 1.4550710000000002,
+      "savings_pct": 18.74771624016727
+    },
+    {
+      "config": "png_64",
+      "file_type": "png",
+      "file_size": 64,
+      "size_category": "tiny",
+      "optimal_algorithm": "AES-256",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0012935,
+      "baseline_energy_j": 0.0012935,
+      "energy_saved_j": 0.0,
+      "savings_pct": 0.0
+    },
+    {
+      "config": "png_1024",
+      "file_type": "png",
+      "file_size": 1024,
+      "size_category": "small",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.00126,
+      "baseline_energy_j": 0.0013945,
+      "energy_saved_j": 0.00013449999999999985,
+      "savings_pct": 9.645034062387943
+    },
+    {
+      "config": "png_10240",
+      "file_type": "png",
+      "file_size": 10240,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-256",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001923,
+      "baseline_energy_j": 0.001923,
+      "energy_saved_j": 0.0,
+      "savings_pct": 0.0
+    },
+    {
+      "config": "png_102400",
+      "file_type": "png",
+      "file_size": 102400,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.005901,
+      "baseline_energy_j": 0.008858000000000001,
+      "energy_saved_j": 0.0029570000000000013,
+      "savings_pct": 33.38225333032288
+    },
+    {
+      "config": "png_1048576",
+      "file_type": "png",
+      "file_size": 1048576,
+      "size_category": "large",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.076381,
+      "baseline_energy_j": 0.094895,
+      "energy_saved_j": 0.01851399999999999,
+      "savings_pct": 19.50998471995362
+    },
+    {
+      "config": "png_10485760",
+      "file_type": "png",
+      "file_size": 10485760,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.671273,
+      "baseline_energy_j": 0.7883665,
+      "energy_saved_j": 0.11709349999999996,
+      "savings_pct": 14.852673217342439
+    },
+    {
+      "config": "png_104857600",
+      "file_type": "png",
+      "file_size": 104857600,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 6.267901,
+      "baseline_energy_j": 7.7988765,
+      "energy_saved_j": 1.5309755000000003,
+      "savings_pct": 19.630718604147663
+    },
+    {
+      "config": "sql_64",
+      "file_type": "sql",
+      "file_size": 64,
+      "size_category": "tiny",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001109,
+      "baseline_energy_j": 0.001285,
+      "energy_saved_j": 0.00017599999999999994,
+      "savings_pct": 13.696498054474704
+    },
+    {
+      "config": "sql_1024",
+      "file_type": "sql",
+      "file_size": 1024,
+      "size_category": "small",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001227,
+      "baseline_energy_j": 0.001344,
+      "energy_saved_j": 0.00011699999999999992,
+      "savings_pct": 8.705357142857137
+    },
+    {
+      "config": "sql_10240",
+      "file_type": "sql",
+      "file_size": 10240,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001731,
+      "baseline_energy_j": 0.001915,
+      "energy_saved_j": 0.00018400000000000014,
+      "savings_pct": 9.60835509138382
+    },
+    {
+      "config": "sql_102400",
+      "file_type": "sql",
+      "file_size": 102400,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.005914,
+      "baseline_energy_j": 0.007283,
+      "energy_saved_j": 0.0013690000000000004,
+      "savings_pct": 18.797198956473984
+    },
+    {
+      "config": "sql_1048576",
+      "file_type": "sql",
+      "file_size": 1048576,
+      "size_category": "large",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0771415,
+      "baseline_energy_j": 0.0931935,
+      "energy_saved_j": 0.016051999999999997,
+      "savings_pct": 17.224377236609847
+    },
+    {
+      "config": "sql_10485760",
+      "file_type": "sql",
+      "file_size": 10485760,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.67676,
+      "baseline_energy_j": 0.7902685,
+      "energy_saved_j": 0.11350850000000001,
+      "savings_pct": 14.363282858927063
+    },
+    {
+      "config": "sql_104857600",
+      "file_type": "sql",
+      "file_size": 104857600,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 6.27489,
+      "baseline_energy_j": 7.786808000000001,
+      "energy_saved_j": 1.5119180000000005,
+      "savings_pct": 19.416402715978105
+    },
+    {
+      "config": "txt_64",
+      "file_type": "txt",
+      "file_size": 64,
+      "size_category": "tiny",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001109,
+      "baseline_energy_j": 0.001294,
+      "energy_saved_j": 0.00018500000000000005,
+      "savings_pct": 14.296754250386403
+    },
+    {
+      "config": "txt_1024",
+      "file_type": "txt",
+      "file_size": 1024,
+      "size_category": "small",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001243,
+      "baseline_energy_j": 0.001663,
+      "energy_saved_j": 0.00042,
+      "savings_pct": 25.255562236921232
+    },
+    {
+      "config": "txt_10240",
+      "file_type": "txt",
+      "file_size": 10240,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001789,
+      "baseline_energy_j": 0.001932,
+      "energy_saved_j": 0.0001429999999999999,
+      "savings_pct": 7.401656314699788
+    },
+    {
+      "config": "txt_102400",
+      "file_type": "txt",
+      "file_size": 102400,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0058925,
+      "baseline_energy_j": 0.0074800000000000005,
+      "energy_saved_j": 0.0015875000000000004,
+      "savings_pct": 21.223262032085564
+    },
+    {
+      "config": "txt_1048576",
+      "file_type": "txt",
+      "file_size": 1048576,
+      "size_category": "large",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.07777999999999999,
+      "baseline_energy_j": 0.092837,
+      "energy_saved_j": 0.015057000000000015,
+      "savings_pct": 16.218748990165572
+    },
+    {
+      "config": "txt_10485760",
+      "file_type": "txt",
+      "file_size": 10485760,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.6827749999999999,
+      "baseline_energy_j": 0.794406,
+      "energy_saved_j": 0.11163100000000004,
+      "savings_pct": 14.052134550846802
+    },
+    {
+      "config": "txt_104857600",
+      "file_type": "txt",
+      "file_size": 104857600,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 6.2678895,
+      "baseline_energy_j": 7.77079,
+      "energy_saved_j": 1.5029005,
+      "savings_pct": 19.34038238068459
+    },
+    {
+      "config": "zip_64",
+      "file_type": "zip",
+      "file_size": 64,
+      "size_category": "tiny",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001117,
+      "baseline_energy_j": 0.001302,
+      "energy_saved_j": 0.00018500000000000005,
+      "savings_pct": 14.208909370199695
+    },
+    {
+      "config": "zip_1024",
+      "file_type": "zip",
+      "file_size": 1024,
+      "size_category": "small",
+      "optimal_algorithm": "ChaCha20",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.001252,
+      "baseline_energy_j": 0.001352,
+      "energy_saved_j": 9.999999999999983e-05,
+      "savings_pct": 7.396449704141999
+    },
+    {
+      "config": "zip_10240",
+      "file_type": "zip",
+      "file_size": 10240,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.0017430000000000002,
+      "baseline_energy_j": 0.001932,
+      "energy_saved_j": 0.00018899999999999972,
+      "savings_pct": 9.78260869565216
+    },
+    {
+      "config": "zip_102400",
+      "file_type": "zip",
+      "file_size": 102400,
+      "size_category": "medium",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.00588,
+      "baseline_energy_j": 0.00764,
+      "energy_saved_j": 0.0017600000000000003,
+      "savings_pct": 23.03664921465969
+    },
+    {
+      "config": "zip_1048576",
+      "file_type": "zip",
+      "file_size": 1048576,
+      "size_category": "large",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.07774600000000001,
+      "baseline_energy_j": 0.092312,
+      "energy_saved_j": 0.014565999999999996,
+      "savings_pct": 15.779096975474472
+    },
+    {
+      "config": "zip_10485760",
+      "file_type": "zip",
+      "file_size": 10485760,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 0.6768765,
+      "baseline_energy_j": 0.7914410000000001,
+      "energy_saved_j": 0.11456450000000007,
+      "savings_pct": 14.475431523006776
+    },
+    {
+      "config": "zip_104857600",
+      "file_type": "zip",
+      "file_size": 104857600,
+      "size_category": "huge",
+      "optimal_algorithm": "AES-128",
+      "baseline_algorithm": "AES-256",
+      "optimal_energy_j": 6.266125499999999,
+      "baseline_energy_j": 7.769558,
+      "energy_saved_j": 1.5034325000000006,
+      "savings_pct": 19.350296374645772
+    }
+  ]
+}

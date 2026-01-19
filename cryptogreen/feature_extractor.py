@@ -60,6 +60,16 @@ class FeatureExtractor:
     _hardware_cache: Optional[dict] = None
     
     @classmethod
+    def clear_hardware_cache(cls) -> None:
+        """Clear the cached hardware capabilities.
+        
+        Call this method to force re-detection of hardware capabilities.
+        Useful after installing new packages like py-cpuinfo.
+        """
+        cls._hardware_cache = None
+        logger.debug("Hardware capabilities cache cleared")
+    
+    @classmethod
     def extract_features(cls, file_path: Union[str, Path]) -> dict:
         """Extract all features from a file.
         
@@ -304,7 +314,9 @@ class FeatureExtractor:
     def _detect_windows_capabilities() -> dict:
         """Detect hardware capabilities on Windows.
         
-        Uses WMI or registry to detect CPU features.
+        Uses py-cpuinfo library to detect CPU features including AES-NI.
+        The 'aes' flag in CPU features indicates AES-NI support on both
+        Intel and AMD processors.
         
         Returns:
             Dict with detected capabilities.
@@ -316,32 +328,44 @@ class FeatureExtractor:
         }
         
         try:
-            # Try using cpuinfo library if available
+            # Use cpuinfo library (py-cpuinfo package)
+            # This properly detects CPU flags including 'aes' for AES-NI
             import cpuinfo
             info = cpuinfo.get_cpu_info()
             
             result['cpu_model'] = info.get('brand_raw', 'Unknown')
             
+            # Check for 'aes' flag which indicates AES-NI support
+            # Works for both Intel and AMD processors
             flags = info.get('flags', [])
-            if 'aes' in flags:
-                result['has_aes_ni'] = True
+            if flags:
+                # Normalize flags to lowercase for comparison
+                flags_lower = [f.lower() for f in flags]
+                if 'aes' in flags_lower:
+                    result['has_aes_ni'] = True
+                    logger.debug(f"AES-NI detected via cpuinfo flags")
+            
+            logger.debug(f"cpuinfo detected: model={result['cpu_model']}, "
+                        f"flags_count={len(flags)}, has_aes_ni={result['has_aes_ni']}")
+            
         except ImportError:
-            # Fallback: try WMI
+            logger.warning("py-cpuinfo not installed. Install with: pip install py-cpuinfo")
+            # Fallback: assume modern Intel/AMD CPUs have AES-NI
             try:
-                import wmi
-                w = wmi.WMI()
-                for processor in w.Win32_Processor():
-                    result['cpu_model'] = processor.Name
-                    # WMI doesn't directly expose AES-NI
-                    # Assume modern Intel/AMD CPUs have it
-                    if 'Intel' in processor.Name or 'AMD' in processor.Name:
-                        # Most CPUs from 2010+ support AES-NI
-                        result['has_aes_ni'] = True
-                    break
-            except ImportError:
+                import platform
+                processor = platform.processor()
+                result['cpu_model'] = processor or 'Unknown'
+                # Most Intel/AMD CPUs from 2010+ support AES-NI
+                if any(brand in processor.upper() for brand in ['INTEL', 'AMD', 'RYZEN', 'CORE']):
+                    result['has_aes_ni'] = True
+                    logger.info(f"AES-NI assumed for {processor} (cpuinfo not available)")
+            except Exception:
                 pass
         except Exception as e:
             logger.warning(f"Error detecting Windows CPU capabilities: {e}")
+            # Fallback for modern CPUs
+            result['has_aes_ni'] = True
+            logger.info("AES-NI assumed True due to detection error (most modern CPUs support it)")
         
         return result
     
